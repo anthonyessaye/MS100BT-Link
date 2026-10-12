@@ -159,13 +159,12 @@ class _PatchListState extends State<PatchList> {
             Text(m.library == null ? 'No backup yet: back up before saving' : 'Last backup ${m.library!.date}',
                 style: TextStyle(fontSize: 12, color: m.library == null ? AppColors.accent : AppColors.dim)),
           const SizedBox(height: 8),
-          Row(children: [
-            Flexible(
-              child: OutlinedButton(
-                  onPressed: m.canInteract && m.backupProgress == null ? _backup : null,
-                  child: const Text('Back up all', overflow: TextOverflow.ellipsis)),
+          Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+            OutlinedButton(
+              style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 14)),
+              onPressed: m.canInteract && m.backupProgress == null ? _backup : null,
+              child: const Text('Back up all'),
             ),
-            const Spacer(),
             PopupMenuButton<int>(
               enabled: m.canInteract && m.library != null,
               tooltip: 'Store the current patch into a memory slot',

@@ -64,7 +64,10 @@ class _HomeScreenState extends State<HomeScreen> {
     final chain = p?.effects.map((e) => '${e.effectId}:${e.isOn == true}').toList();
     final old = _lastChain;
     if (p != null && chain != null && old != null && old.length == chain.length && p.name == _lastName) {
-      final changed = [for (var i = 0; i < chain.length; i++) if (old[i] != chain[i]) i];
+      final changed = [
+        for (var i = 0; i < chain.length; i++)
+          if (old[i] != chain[i]) i,
+      ];
       if (changed.length == 1 && !p.effects[changed.first].isEmpty) m.selectedSlot = changed.first;
     }
     if (p != null && p.effects[m.selectedSlot.clamp(0, 5)].isEmpty) {
@@ -90,26 +93,31 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) => ListenableBuilder(
-        listenable: Listenable.merge([m, widget.midi]),
-        builder: (context, _) => Scaffold(
-          body: DecoratedBox(
-            decoration: const BoxDecoration(gradient: AppColors.backgroundGradient),
-            child: SafeArea(
-              child: DefaultTextStyle.merge(
-                style: const TextStyle(color: AppColors.text),
-                child: Column(children: [
-                  wideBar ? _topBar() : _compactBar(),
-                  const Divider(height: 1, color: AppColors.stroke),
-                  Expanded(
-                    child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+    listenable: Listenable.merge([m, widget.midi]),
+    builder: (context, _) => Scaffold(
+      body: DecoratedBox(
+        decoration: const BoxDecoration(gradient: AppColors.backgroundGradient),
+        child: SafeArea(
+          child: DefaultTextStyle.merge(
+            style: const TextStyle(color: AppColors.text),
+            child: Column(
+              children: [
+                wideBar ? _topBar() : _compactBar(),
+                const Divider(height: 1, color: AppColors.stroke),
+                Expanded(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
                       Expanded(
-                        child: Column(children: [
-                          if (m.hint != null) Padding(padding: const EdgeInsets.fromLTRB(16, 16, 16, 0), child: _banner(m.hint!)),
-                          if (m.fileSystemActive) const LinearProgressIndicator(color: AppColors.accent), // Effects owns the link
-                          Expanded(child: m.patch == null ? _welcome() : _stage()),
-                          if (m.patch != null) _chain(),
-                          _statusLine(),
-                        ]),
+                        child: Column(
+                          children: [
+                            if (m.hint != null) Padding(padding: const EdgeInsets.fromLTRB(16, 16, 16, 0), child: _banner(m.hint!)),
+                            if (m.fileSystemActive) const LinearProgressIndicator(color: AppColors.accent), // Effects owns the link
+                            Expanded(child: m.patch == null ? _welcome() : _stage()),
+                            if (m.patch != null) _chain(),
+                            _statusLine(),
+                          ],
+                        ),
                       ),
                       if (wide && sidebar != null) ...[
                         const VerticalDivider(width: 1, color: AppColors.stroke),
@@ -120,80 +128,98 @@ class _HomeScreenState extends State<HomeScreen> {
                               : PatchesPanel(model: m, onClose: () => setState(() => sidebar = null)),
                         ),
                       ],
-                    ]),
+                    ],
                   ),
-                ]),
-              ),
+                ),
+              ],
             ),
           ),
         ),
-      );
+      ),
+    ),
+  );
 
   // Top bar
 
   Widget _topBar() => Container(
-        height: 56,
-        color: AppColors.panel.withValues(alpha: 0.6),
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        child: Row(children: [
-          _connectionPill(),
-          const Spacer(),
-          _patchSwitcher(),
-          const Spacer(),
-          if (m.patch?.tempo != null) ...[
-            Pill(icon: Icons.av_timer, label: '${m.patch!.tempo}', tooltip: 'Patch tempo (BPM): click to change', onTap: _tempo),
-            const SizedBox(width: 10),
-          ],
-          _lockPill(),
+    height: 56,
+    color: AppColors.panel.withValues(alpha: 0.6),
+    padding: const EdgeInsets.symmetric(horizontal: 16),
+    child: Row(
+      children: [
+        _connectionPill(),
+        const Spacer(),
+        _patchSwitcher(),
+        const Spacer(),
+        if (m.patch?.tempo != null) ...[
+          Pill(icon: Icons.av_timer, label: '${m.patch!.tempo}', tooltip: 'Patch tempo (BPM): click to change', onTap: _tempo),
           const SizedBox(width: 10),
-          Pill(icon: Icons.layers_outlined, label: 'Effects', tooltip: 'Install and remove effects on the pedal', onTap: _openEffects),
-          const SizedBox(width: 10),
-          Pill(icon: Icons.auto_awesome, label: 'AI', active: sidebar == Sidebar.assistant,
-              tooltip: 'Tone assistant: describe a sound, get a patch', onTap: () => _toggle(Sidebar.assistant)),
-          const SizedBox(width: 10),
-          _midiPill(),
-          const SizedBox(width: 10),
-          Pill(icon: Icons.view_sidebar_outlined, active: sidebar == Sidebar.patches, tooltip: 'Patches', onTap: () => _toggle(Sidebar.patches)),
-        ]),
-      );
+        ],
+        _lockPill(),
+        const SizedBox(width: 10),
+        Pill(icon: Icons.layers_outlined, label: 'Effects', tooltip: 'Install and remove effects on the pedal', onTap: _openEffects),
+        const SizedBox(width: 10),
+        Pill(
+          icon: Icons.auto_awesome,
+          label: 'AI',
+          active: sidebar == Sidebar.assistant,
+          tooltip: 'Tone assistant: describe a sound, get a patch',
+          onTap: () => _toggle(Sidebar.assistant),
+        ),
+        const SizedBox(width: 10),
+        _midiPill(),
+        const SizedBox(width: 10),
+        Pill(
+          icon: Icons.view_sidebar_outlined,
+          active: sidebar == Sidebar.patches,
+          tooltip: 'Patches',
+          onTap: () => _toggle(Sidebar.patches),
+        ),
+      ],
+    ),
+  );
 
   Widget _compactBar() => Container(
-        color: AppColors.panel.withValues(alpha: 0.6),
-        padding: const EdgeInsets.fromLTRB(10, 8, 4, 8),
-        child: Row(children: [
-          _connectionPill(compact: true),
-          const SizedBox(width: 8),
-          Expanded(child: _patchSwitcher()),
-          IconButton(
-            tooltip: m.editingEnabled ? 'Editing: tap to lock' : 'Locked: tap to unlock',
-            onPressed: _toggleLock,
-            icon: Icon(m.editingEnabled ? Icons.lock_open : Icons.lock, color: m.editingEnabled ? AppColors.accent : AppColors.text),
-          ),
-          PopupMenuButton<String>(
-            tooltip: 'More',
-            onSelected: (v) => switch (v) {
-              'patches' => _toggle(Sidebar.patches),
-              'ai' => _toggle(Sidebar.assistant),
-              'effects' => _openEffects(),
-              'midi' => _openMidi(),
-              'mode' => widget.midi.setMode(widget.midi.mode == ControlMode.stomp ? ControlMode.patch : ControlMode.stomp),
-              'tempo' => _tempo(),
-              _ => null,
-            },
-            itemBuilder: (_) => [
-              _menuItem('patches', Icons.view_list, 'Patches'),
-              _menuItem('ai', Icons.auto_awesome, 'Tone Assistant'),
-              _menuItem('effects', Icons.layers_outlined, 'Effects'),
-              _menuItem('midi', Icons.piano, 'MIDI'),
-              _menuItem('mode', Icons.swap_horiz, 'Footswitch mode: ${widget.midi.mode == ControlMode.stomp ? 'Stomp' : 'Patch'}'),
-              if (m.patch?.tempo != null) _menuItem('tempo', Icons.av_timer, 'Tempo ${m.patch!.tempo} BPM'),
-            ],
-          ),
-        ]),
-      );
+    color: AppColors.panel.withValues(alpha: 0.6),
+    padding: const EdgeInsets.fromLTRB(10, 8, 4, 8),
+    child: Row(
+      children: [
+        _connectionPill(compact: true),
+        const SizedBox(width: 8),
+        Expanded(child: _patchSwitcher()),
+        IconButton(
+          tooltip: m.editingEnabled ? 'Editing: tap to lock' : 'Locked: tap to unlock',
+          onPressed: _toggleLock,
+          icon: Icon(m.editingEnabled ? Icons.lock_open : Icons.lock, color: m.editingEnabled ? AppColors.accent : AppColors.text),
+        ),
+        PopupMenuButton<String>(
+          tooltip: 'More',
+          onSelected: (v) => switch (v) {
+            'patches' => _toggle(Sidebar.patches),
+            'ai' => _toggle(Sidebar.assistant),
+            'effects' => _openEffects(),
+            'midi' => _openMidi(),
+            'mode' => widget.midi.setMode(widget.midi.mode == ControlMode.stomp ? ControlMode.patch : ControlMode.stomp),
+            'tempo' => _tempo(),
+            _ => null,
+          },
+          itemBuilder: (_) => [
+            _menuItem('patches', Icons.view_list, 'Patches'),
+            _menuItem('ai', Icons.auto_awesome, 'Tone Assistant'),
+            _menuItem('effects', Icons.layers_outlined, 'Effects'),
+            _menuItem('midi', Icons.piano, 'MIDI'),
+            _menuItem('mode', Icons.swap_horiz, 'Footswitch mode: ${widget.midi.mode == ControlMode.stomp ? 'Stomp' : 'Patch'}'),
+            if (m.patch?.tempo != null) _menuItem('tempo', Icons.av_timer, 'Tempo ${m.patch!.tempo} BPM'),
+          ],
+        ),
+      ],
+    ),
+  );
 
-  PopupMenuItem<String> _menuItem(String v, IconData icon, String text) =>
-      PopupMenuItem(value: v, child: Row(children: [Icon(icon, size: 18), const SizedBox(width: 12), Text(text)]));
+  PopupMenuItem<String> _menuItem(String v, IconData icon, String text) => PopupMenuItem(
+    value: v,
+    child: Row(children: [Icon(icon, size: 18), const SizedBox(width: 12), Text(text)]),
+  );
 
   Widget _connectionPill({bool compact = false}) {
     final name = m.device?.name ?? 'No pedal';
@@ -221,7 +247,11 @@ class _HomeScreenState extends State<HomeScreen> {
       },
       itemBuilder: (_) => [
         if (m.isConnected) ...[
-          CheckedPopupMenuItem(value: 'screen', checked: m.showOnPedalScreen, child: const Text("Show changed effect on the pedal's screen")),
+          CheckedPopupMenuItem(
+            value: 'screen',
+            checked: m.showOnPedalScreen,
+            child: const Text("Show changed effect on the pedal's screen"),
+          ),
           const PopupMenuItem(value: 'reload', child: Text('Reload from pedal')),
           const PopupMenuItem(value: 'disconnect', child: Text('Disconnect')),
         ] else ...[
@@ -236,16 +266,23 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Container(
         padding: EdgeInsets.symmetric(horizontal: compact ? 10 : 12, vertical: compact ? 10 : 5),
         decoration: const ShapeDecoration(color: AppColors.panelRaised, shape: StadiumBorder()),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Led(on: m.isConnected, color: m.isConnected ? Colors.green : Colors.grey, size: 9),
-          if (!compact) ...[
-            const SizedBox(width: 8),
-            Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-              Text(name, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-              Text(status, style: const TextStyle(fontSize: 11, color: AppColors.dim)),
-            ]),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Led(on: m.isConnected, color: m.isConnected ? Colors.green : Colors.grey, size: 9),
+            if (!compact) ...[
+              const SizedBox(width: 8),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(name, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                  Text(status, style: const TextStyle(fontSize: 11, color: AppColors.dim)),
+                ],
+              ),
+            ],
           ],
-        ]),
+        ),
       ),
     );
   }
@@ -255,51 +292,71 @@ class _HomeScreenState extends State<HomeScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: const ShapeDecoration(color: Color(0x59000000), shape: StadiumBorder()),
-      child: Row(mainAxisSize: MainAxisSize.min, children: [
-        IconButton(
-          visualDensity: VisualDensity.compact,
-          onPressed: m.canInteract ? () async { if (await ensureUnlocked()) await m.stepPatch(-1); } : null,
-          icon: const Icon(Icons.chevron_left),
-        ),
-        Flexible(
-          child: InkWell(
-            onTap: () => _toggle(Sidebar.patches),
-            onLongPress: _rename,
-            child: Row(mainAxisSize: MainAxisSize.min, children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                decoration: BoxDecoration(color: AppColors.accent, borderRadius: BorderRadius.circular(5)),
-                child: Text(slotText, style: const TextStyle(fontFamily: 'Menlo', fontWeight: FontWeight.w700, fontSize: 13, color: Colors.black)),
-              ),
-              const SizedBox(width: 10),
-              Flexible(
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(minWidth: wideBar ? 140 : 0),
-                  child: Text(m.patch?.name ?? 'Not connected', overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
-                ),
-              ),
-            ]),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            visualDensity: VisualDensity.compact,
+            onPressed: m.canInteract
+                ? () async {
+                    if (await ensureUnlocked()) await m.stepPatch(-1);
+                  }
+                : null,
+            icon: const Icon(Icons.chevron_left),
           ),
-        ),
-        IconButton(
-          visualDensity: VisualDensity.compact,
-          onPressed: m.canInteract ? () async { if (await ensureUnlocked()) await m.stepPatch(1); } : null,
-          icon: const Icon(Icons.chevron_right),
-        ),
-      ]),
+          Flexible(
+            child: InkWell(
+              onTap: () => _toggle(Sidebar.patches),
+              onLongPress: _rename,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                    decoration: BoxDecoration(color: AppColors.accent, borderRadius: BorderRadius.circular(5)),
+                    child: Text(
+                      slotText,
+                      style: const TextStyle(fontFamily: 'Menlo', fontWeight: FontWeight.w700, fontSize: 13, color: Colors.black),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Flexible(
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(minWidth: wideBar ? 140 : 0),
+                      child: Text(
+                        m.patch?.name ?? 'Not connected',
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          IconButton(
+            visualDensity: VisualDensity.compact,
+            onPressed: m.canInteract
+                ? () async {
+                    if (await ensureUnlocked()) await m.stepPatch(1);
+                  }
+                : null,
+            icon: const Icon(Icons.chevron_right),
+          ),
+        ],
+      ),
     );
   }
 
   Future<void> _toggleLock() async => m.editingEnabled ? m.setEditing(false) : await ensureUnlocked();
 
   Widget _lockPill() => Pill(
-        icon: m.editingEnabled ? Icons.lock_open : Icons.lock,
-        label: m.editingEnabled ? 'Editing' : 'Locked',
-        active: m.editingEnabled,
-        tooltip: m.editingEnabled ? 'Changes are sent to the pedal. Click to lock.' : 'Unlock to change the pedal from this device.',
-        onTap: _toggleLock,
-      );
+    icon: m.editingEnabled ? Icons.lock_open : Icons.lock,
+    label: m.editingEnabled ? 'Editing' : 'Locked',
+    active: m.editingEnabled,
+    tooltip: m.editingEnabled ? 'Changes are sent to the pedal. Click to lock.' : 'Unlock to change the pedal from this device.',
+    onTap: _toggleLock,
+  );
 
   /// MIDI button with the footswitch mode; tap the mode to flip Stomp/Patch.
   Widget _midiPill() {
@@ -316,8 +373,10 @@ class _HomeScreenState extends State<HomeScreen> {
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: ShapeDecoration(color: stomp ? const Color(0xFF4D4D4D) : AppColors.accent, shape: const StadiumBorder()),
-            child: Text(stomp ? 'STOMP' : 'PATCH',
-                style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 0.8, color: stomp ? AppColors.text : Colors.black)),
+            child: Text(
+              stomp ? 'STOMP' : 'PATCH',
+              style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 0.8, color: stomp ? AppColors.text : Colors.black),
+            ),
           ),
         ),
       ),
@@ -328,55 +387,82 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _stage() {
     final fx = m.patch!.effects[m.selectedSlot.clamp(0, 5)];
-    return Center(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
-        child: fx.isEmpty
-            ? Column(mainAxisSize: MainAxisSize.min, children: [
-                const Icon(Icons.add_circle_outline, size: 44, color: AppColors.dim),
-                const SizedBox(height: 14),
-                Text('Slot ${fx.index + 1} is empty', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w600, color: AppColors.dim)),
-                const SizedBox(height: 14),
-                Pill(label: 'Choose an effect', active: true, onTap: m.canInteract ? () => _pickEffect(fx.index) : null),
-              ])
-            : Column(mainAxisSize: MainAxisSize.min, children: [
-                _bigPedal(fx),
-                const SizedBox(height: 16),
-                Row(mainAxisSize: MainAxisSize.min, children: [
-                  _stageButton(Icons.swap_horiz, 'Change effect', true, () => _pickEffect(fx.index)),
-                  const SizedBox(width: 10),
-                  _stageButton(Icons.delete_outline, 'Remove', false, () async {
-                    if (await ensureUnlocked()) await m.setEffect(fx.index, 0);
-                  }),
-                ]),
-              ]),
+    // Scaled down to fit the window (like SwiftUI), never scrolled or clipped.
+    return Padding(
+      padding: const EdgeInsets.all(24),
+      child: Center(
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: fx.isEmpty
+              ? Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.add_circle_outline, size: 44, color: AppColors.dim),
+                    const SizedBox(height: 14),
+                    Text(
+                      'Slot ${fx.index + 1} is empty',
+                      style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w600, color: AppColors.dim),
+                    ),
+                    const SizedBox(height: 14),
+                    Pill(label: 'Choose an effect', active: true, onTap: m.canInteract ? () => _pickEffect(fx.index) : null),
+                  ],
+                )
+              : Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _bigPedal(fx),
+                    const SizedBox(height: 16),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _stageButton(Icons.swap_horiz, 'Change effect', true, () => _pickEffect(fx.index)),
+                        const SizedBox(width: 10),
+                        _stageButton(Icons.delete_outline, 'Remove', false, () async {
+                          if (await ensureUnlocked()) await m.setEffect(fx.index, 0);
+                        }),
+                      ],
+                    ),
+                  ],
+                ),
+        ),
       ),
     );
   }
 
   Widget _stageButton(IconData icon, String label, bool primary, VoidCallback onTap) => Material(
-        color: primary ? AppColors.accent : AppColors.panelRaised,
-        shape: const StadiumBorder(),
-        child: InkWell(
-          customBorder: const StadiumBorder(),
-          onTap: m.canInteract ? onTap : null,
-          child: Padding(
-            padding: EdgeInsets.symmetric(horizontal: primary ? 18 : 14, vertical: 10),
-            child: Row(mainAxisSize: MainAxisSize.min, children: [
-              Icon(icon, size: 16, color: primary ? Colors.black : AppColors.text),
-              const SizedBox(width: 6),
-              Text(label, style: TextStyle(fontSize: primary ? 14 : 13, fontWeight: primary ? FontWeight.w700 : FontWeight.w600,
-                  color: primary ? Colors.black : AppColors.text)),
-            ]),
-          ),
+    color: primary ? AppColors.accent : AppColors.panelRaised,
+    shape: const StadiumBorder(),
+    child: InkWell(
+      customBorder: const StadiumBorder(),
+      onTap: m.canInteract ? onTap : null,
+      child: Padding(
+        padding: EdgeInsets.symmetric(horizontal: primary ? 18 : 14, vertical: 10),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 16, color: primary ? Colors.black : AppColors.text),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: primary ? 14 : 13,
+                fontWeight: primary ? FontWeight.w700 : FontWeight.w600,
+                color: primary ? Colors.black : AppColors.text,
+              ),
+            ),
+          ],
         ),
-      );
+      ),
+    ),
+  );
 
   Widget _bigPedal(EffectSlot fx) {
     final on = fx.isOn == true;
     final def = EffectCatalog.effect(fx.effectId);
     final params = fx.parameters;
-    final width = wide ? 380.0 : (MediaQuery.sizeOf(context).width - 48).clamp(260.0, 380.0);
+    // 7–9 knobs: a wider pedal with 5 columns (2 rows) on big screens, so it shrinks less to fit.
+    final cols = wide && params.length > 6 ? 5 : params.length.clamp(1, 3);
+    final width = wide ? (cols > 3 ? 540.0 : 380.0) : (MediaQuery.sizeOf(context).width - 48).clamp(260.0, 380.0);
     return AnimatedOpacity(
       duration: const Duration(milliseconds: 250),
       opacity: 1,
@@ -389,34 +475,61 @@ class _HomeScreenState extends State<HomeScreen> {
             radius: 22,
             child: Padding(
               padding: const EdgeInsets.all(28),
-              child: Column(mainAxisSize: MainAxisSize.min, children: [
-                Row(children: [
-                  Led(on: on, size: 14),
-                  const Spacer(),
-                  Text((fx.category ?? '').toUpperCase(),
-                      style: const TextStyle(fontWeight: FontWeight.w900, letterSpacing: 2, fontSize: 11, color: Color(0xBFFFFFFF))),
-                ]),
-                const SizedBox(height: 18),
-                Container(
-                  padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 12),
-                  decoration: BoxDecoration(color: const Color(0x4D000000), borderRadius: BorderRadius.circular(12)),
-                  child: LayoutBuilder(builder: (context, c) {
-                    final cols = params.length.clamp(1, 3);
-                    final cell = c.maxWidth / cols;
-                    return Wrap(runSpacing: 18, children: [
-                      for (final p in params)
-                        SizedBox(width: cell, child: Center(child: _control(fx, p, def?.parameters.elementAtOrNull(p.index)))),
-                    ]);
-                  }),
-                ),
-                const SizedBox(height: 18),
-                Text(fx.displayName,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    children: [
+                      Led(on: on, size: 14),
+                      const Spacer(),
+                      Text(
+                        (fx.category ?? '').toUpperCase(),
+                        style: const TextStyle(fontWeight: FontWeight.w900, letterSpacing: 2, fontSize: 11, color: Color(0xBFFFFFFF)),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 18),
+                  Container(
+                    padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 12),
+                    decoration: BoxDecoration(color: const Color(0x4D000000), borderRadius: BorderRadius.circular(12)),
+                    child: LayoutBuilder(
+                      builder: (context, c) {
+                        final cell = c.maxWidth / cols;
+                        return Wrap(
+                          runSpacing: 18,
+                          children: [
+                            for (final p in params)
+                              SizedBox(
+                                width: cell,
+                                child: Center(child: _control(fx, p, def?.parameters.elementAtOrNull(p.index))),
+                              ),
+                          ],
+                        );
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  Text(
+                    fx.displayName,
                     textAlign: TextAlign.center,
-                    style: const TextStyle(fontSize: 30, fontWeight: FontWeight.w900, color: Colors.white,
-                        shadows: [Shadow(color: Color(0x66000000), blurRadius: 2, offset: Offset(0, 1))])),
-                const SizedBox(height: 18),
-                Footswitch(size: 54, onTap: m.canInteract ? () async { if (await ensureUnlocked()) await m.setOn(fx.index, !on); } : null),
-              ]),
+                    style: const TextStyle(
+                      fontSize: 30,
+                      fontWeight: FontWeight.w900,
+                      color: Colors.white,
+                      shadows: [Shadow(color: Color(0x66000000), blurRadius: 2, offset: Offset(0, 1))],
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  Footswitch(
+                    size: 54,
+                    onTap: m.canInteract
+                        ? () async {
+                            if (await ensureUnlocked()) await m.setOn(fx.index, !on);
+                          }
+                        : null,
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -431,11 +544,21 @@ class _HomeScreenState extends State<HomeScreen> {
 
     final count = def?.valueCount ?? 0;
     if (def != null && count == 2) {
-      return MiniSwitch(label: p.name, options: [def.display(0) ?? '0', def.display(1) ?? '1'], raw: p.raw,
-          enabled: m.canInteract, onChanged: set);
+      return MiniSwitch(
+        label: p.name,
+        options: [def.display(0) ?? '0', def.display(1) ?? '1'],
+        raw: p.raw,
+        enabled: m.canInteract,
+        onChanged: set,
+      );
     }
     return Knob(
-      label: p.name, display: p.text, raw: p.raw, count: count, defaultRaw: def?.defaultRaw ?? 0, size: 62,
+      label: p.name,
+      display: p.text,
+      raw: p.raw,
+      count: count,
+      defaultRaw: def?.defaultRaw ?? 0,
+      size: 62,
       enabled: m.canInteract && def != null, // custom effects: value ranges unknown, shown only
       onChanged: set,
     );
@@ -448,36 +571,46 @@ class _HomeScreenState extends State<HomeScreen> {
     return Container(
       color: const Color(0x59000000),
       padding: const EdgeInsets.fromLTRB(20, 34, 20, 16),
-      child: LayoutBuilder(builder: (context, c) {
-        const pedalW = 104.0, jackW = 22.0; // 92 + selection border and padding
-        final minW = jackW * 2 + 6 * pedalW + 7 * 10;
-        final row = SizedBox(
-          width: c.maxWidth > minW ? c.maxWidth : minW,
-          child: Stack(alignment: Alignment.center, children: [
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 30),
-              child: Transform.translate(
-                offset: const Offset(0, -11), // level with the jacks
-                child: Container(
-                  height: 6,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(3),
-                    gradient: const LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter,
-                        colors: [Color(0xFF4D4D4D), Color(0xFF1F1F1F)]),
+      child: LayoutBuilder(
+        builder: (context, c) {
+          const pedalW = 104.0, jackW = 22.0; // 92 + selection border and padding
+          final minW = jackW * 2 + 6 * pedalW + 7 * 10;
+          final row = SizedBox(
+            width: c.maxWidth > minW ? c.maxWidth : minW,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 30),
+                  child: Transform.translate(
+                    offset: const Offset(0, -11), // level with the jacks
+                    child: Container(
+                      height: 6,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(3),
+                        gradient: const LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [Color(0xFF4D4D4D), Color(0xFF1F1F1F)],
+                        ),
+                      ),
+                    ),
                   ),
                 ),
-              ),
+                Row(
+                  children: [
+                    const _Jack('IN'),
+                    for (final fx in p.effects) ...[const Spacer(), _miniPedal(fx)],
+                    const Spacer(),
+                    const _Jack('OUT'),
+                  ],
+                ),
+              ],
             ),
-            Row(children: [
-              const _Jack('IN'),
-              for (final fx in p.effects) ...[const Spacer(), _miniPedal(fx)],
-              const Spacer(),
-              const _Jack('OUT'),
-            ]),
-          ]),
-        );
-        return c.maxWidth >= minW ? row : SingleChildScrollView(scrollDirection: Axis.horizontal, clipBehavior: Clip.none, child: row);
-      }),
+          );
+          return c.maxWidth >= minW ? row : SingleChildScrollView(scrollDirection: Axis.horizontal, clipBehavior: Clip.none, child: row);
+        },
+      ),
     );
   }
 
@@ -498,7 +631,10 @@ class _HomeScreenState extends State<HomeScreen> {
           curve: Curves.easeOutBack,
           builder: (context, t, child) => Transform.translate(
             offset: Offset(0, -22 * t), // lifted off the cable: signal bypasses it
-            child: Transform.scale(scale: 1 - 0.06 * t, child: Opacity(opacity: 1 - 0.2 * t, child: child)),
+            child: Transform.scale(
+              scale: 1 - 0.06 * t,
+              child: Opacity(opacity: 1 - 0.2 * t, child: child),
+            ),
           ),
           child: Container(
             padding: const EdgeInsets.all(4),
@@ -520,14 +656,28 @@ class _HomeScreenState extends State<HomeScreen> {
                       ? const Center(child: Icon(Icons.add, color: AppColors.dim))
                       : Padding(
                           padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
-                          child: Column(children: [
-                            Led(on: fx.isOn == true, size: 8),
-                            const SizedBox(height: 6),
-                            Text(fx.displayName, textAlign: TextAlign.center, maxLines: 2, overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 12, color: Colors.white)),
-                            const Spacer(),
-                            Footswitch(size: 26, onTap: m.canInteract ? () async { if (await ensureUnlocked()) await m.setOn(fx.index, fx.isOn != true); } : null),
-                          ]),
+                          child: Column(
+                            children: [
+                              Led(on: fx.isOn == true, size: 8),
+                              const SizedBox(height: 6),
+                              Text(
+                                fx.displayName,
+                                textAlign: TextAlign.center,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 12, color: Colors.white),
+                              ),
+                              const Spacer(),
+                              Footswitch(
+                                size: 26,
+                                onTap: m.canInteract
+                                    ? () async {
+                                        if (await ensureUnlocked()) await m.setOn(fx.index, fx.isOn != true);
+                                      }
+                                    : null,
+                              ),
+                            ],
+                          ),
                         ),
                 ),
               ),
@@ -547,96 +697,127 @@ class _HomeScreenState extends State<HomeScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       child: DefaultTextStyle.merge(
         style: const TextStyle(fontSize: 11, color: AppColors.dim),
-        child: Row(children: [
-          if (m.isConnected) ...[
-            Icon(Icons.graphic_eq, size: 13, color: AppColors.dim),
-            const SizedBox(width: 4),
-            Text(m.liveUpdates ? 'Live' : 'Manual refresh'),
-            const SizedBox(width: 14),
-            Flexible(
-              child: Text(m.editingEnabled ? 'Edits play right away; use Save to keep them' : 'Locked: using a control asks to unlock',
-                  overflow: TextOverflow.ellipsis),
-            ),
+        child: Row(
+          children: [
+            if (m.isConnected) ...[
+              Icon(Icons.graphic_eq, size: 13, color: AppColors.dim),
+              const SizedBox(width: 4),
+              Text(m.liveUpdates ? 'Live' : 'Manual refresh'),
+              const SizedBox(width: 14),
+              Flexible(
+                child: Text(
+                  m.editingEnabled ? 'Edits play right away; use Save to keep them' : 'Locked: using a control asks to unlock',
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+            const Spacer(),
+            if (midi.lastMessage != null) ...[
+              const Icon(Icons.piano, size: 13, color: AppColors.dim),
+              const SizedBox(width: 4),
+              Text(midi.lastMessage!),
+            ],
+            if (midi.status != null) ...[
+              const SizedBox(width: 10),
+              Flexible(
+                child: Text(
+                  midi.status!,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: AppColors.accent),
+                ),
+              ),
+            ],
           ],
-          const Spacer(),
-          if (midi.lastMessage != null) ...[
-            const Icon(Icons.piano, size: 13, color: AppColors.dim),
-            const SizedBox(width: 4),
-            Text(midi.lastMessage!),
-          ],
-          if (midi.status != null) ...[const SizedBox(width: 10), Flexible(child: Text(midi.status!, overflow: TextOverflow.ellipsis, style: const TextStyle(color: AppColors.accent)))],
-        ]),
+        ),
       ),
     );
   }
 
   Widget _banner(String text) => Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(color: AppColors.accent.withValues(alpha: 0.14), borderRadius: BorderRadius.circular(10)),
-        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          const Icon(Icons.error, color: AppColors.accent, size: 18),
-          const SizedBox(width: 10),
-          Expanded(child: Text(text)),
-          InkWell(onTap: () { m.hint = null; m.refreshDevices(); }, child: const Icon(Icons.close, size: 16, color: AppColors.dim)),
-        ]),
-      );
+    padding: const EdgeInsets.all(12),
+    decoration: BoxDecoration(color: AppColors.accent.withValues(alpha: 0.14), borderRadius: BorderRadius.circular(10)),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Icon(Icons.error, color: AppColors.accent, size: 18),
+        const SizedBox(width: 10),
+        Expanded(child: Text(text)),
+        InkWell(
+          onTap: () {
+            m.hint = null;
+            m.refreshDevices();
+          },
+          child: const Icon(Icons.close, size: 16, color: AppColors.dim),
+        ),
+      ],
+    ),
+  );
 
   Widget _welcome() => Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 460),
-            child: Column(mainAxisSize: MainAxisSize.min, children: [
-              const Icon(Icons.wifi_tethering, size: 48, color: AppColors.accent),
-              const SizedBox(height: 18),
-              Text(m.device == null ? 'Pair your MS-100BT' : 'Connect your MS-100BT',
-                  textAlign: TextAlign.center, style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w700)),
-              const SizedBox(height: 18),
-              Text(
-                m.device == null
-                    ? "Pair it in this device's Bluetooth settings first (on the pedal: knob 1 → MENU → Bluetooth → pairing)."
-                    : 'Turn the pedal on and keep it near this device.',
-                textAlign: TextAlign.center,
-                style: const TextStyle(color: AppColors.dim),
+    child: SingleChildScrollView(
+      padding: const EdgeInsets.all(24),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 460),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.wifi_tethering, size: 48, color: AppColors.accent),
+            const SizedBox(height: 18),
+            Text(
+              m.device == null ? 'Pair your MS-100BT' : 'Connect your MS-100BT',
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 18),
+            Text(
+              m.device == null
+                  ? "Pair it in this device's Bluetooth settings first (on the pedal: knob 1 → MENU → Bluetooth → pairing)."
+                  : 'Turn the pedal on and keep it near this device.',
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: AppColors.dim),
+            ),
+            if (m.devices.length > 1) ...[
+              const SizedBox(height: 14),
+              DropdownButton<String>(
+                value: m.device?.address,
+                dropdownColor: AppColors.panelRaised,
+                items: [for (final d in m.devices) DropdownMenuItem(value: d.address, child: Text(d.name))],
+                onChanged: (a) => setState(() => m.device = m.devices.firstWhere((d) => d.address == a)),
               ),
-              if (m.devices.length > 1) ...[
-                const SizedBox(height: 14),
-                DropdownButton<String>(
-                  value: m.device?.address,
-                  dropdownColor: AppColors.panelRaised,
-                  items: [for (final d in m.devices) DropdownMenuItem(value: d.address, child: Text(d.name))],
-                  onChanged: (a) => setState(() => m.device = m.devices.firstWhere((d) => d.address == a)),
-                ),
-              ],
-              const SizedBox(height: 18),
-              if (m.busy != null)
-                Row(mainAxisSize: MainAxisSize.min, children: [
+            ],
+            const SizedBox(height: 18),
+            if (m.busy != null)
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
                   const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2)),
                   const SizedBox(width: 8),
                   Text(m.busy!, style: const TextStyle(fontSize: 13)),
-                ])
-              else if (m.device == null)
-                Pill(label: 'Refresh devices', active: true, onTap: m.refreshDevices)
-              else
-                Pill(label: 'Connect', active: true, onTap: m.connect),
-            ]),
-          ),
+                ],
+              )
+            else if (m.device == null)
+              Pill(label: 'Refresh devices', active: true, onTap: m.refreshDevices)
+            else
+              Pill(label: 'Connect', active: true, onTap: m.connect),
+          ],
         ),
-      );
+      ),
+    ),
+  );
 
   void _platformNotes() => showDialog<void>(
-        context: context,
-        builder: (c) => AlertDialog(
-          title: const Text('Diagnostics'),
-          content: SingleChildScrollView(
-            child: SelectableText(
-              m.diagnostics.isEmpty ? 'No platform notes.' : m.diagnostics.entries.map((e) => '${e.key}: ${e.value}').join('\n'),
-              style: const TextStyle(fontFamily: 'Menlo', fontSize: 12),
-            ),
-          ),
-          actions: [TextButton(onPressed: () => Navigator.pop(c), child: const Text('Close'))],
+    context: context,
+    builder: (c) => AlertDialog(
+      title: const Text('Diagnostics'),
+      content: SingleChildScrollView(
+        child: SelectableText(
+          m.diagnostics.isEmpty ? 'No platform notes.' : m.diagnostics.entries.map((e) => '${e.key}: ${e.value}').join('\n'),
+          style: const TextStyle(fontFamily: 'Menlo', fontSize: 12),
         ),
-      );
+      ),
+      actions: [TextButton(onPressed: () => Navigator.pop(c), child: const Text('Close'))],
+    ),
+  );
 
   // Actions
 
@@ -666,10 +847,26 @@ class _Jack extends StatelessWidget {
   const _Jack(this.label);
   final String label;
   @override
-  Widget build(BuildContext context) => Column(mainAxisSize: MainAxisSize.min, children: [
-        Container(width: 22, height: 22, decoration: const BoxDecoration(shape: BoxShape.circle, color: Color(0xFF404040)),
-            child: Center(child: Container(width: 12, height: 12, decoration: const BoxDecoration(shape: BoxShape.circle, color: Colors.black)))),
-        const SizedBox(height: 4),
-        Text(label, style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w900, color: AppColors.dim)),
-      ]);
+  Widget build(BuildContext context) => Column(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      Container(
+        width: 22,
+        height: 22,
+        decoration: const BoxDecoration(shape: BoxShape.circle, color: Color(0xFF404040)),
+        child: Center(
+          child: Container(
+            width: 12,
+            height: 12,
+            decoration: const BoxDecoration(shape: BoxShape.circle, color: Colors.black),
+          ),
+        ),
+      ),
+      const SizedBox(height: 4),
+      Text(
+        label,
+        style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w900, color: AppColors.dim),
+      ),
+    ],
+  );
 }

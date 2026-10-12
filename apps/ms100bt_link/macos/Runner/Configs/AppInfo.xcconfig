@@ -5,7 +5,7 @@
 // 'flutter create' template.
 
 // The application's name. By default this is also the title of the Flutter window.
-PRODUCT_NAME = ms100bt_link
+PRODUCT_NAME = MS-100BT Link
 
 // The application's bundle identifier
 PRODUCT_BUNDLE_IDENTIFIER = com.anthonyessaye.ms100btLink

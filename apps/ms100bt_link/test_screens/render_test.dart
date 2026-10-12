@@ -56,6 +56,21 @@ void main() {
     });
   }
 
+  for (final (name, size) in const [('zsyn_1280x720', Size(1280, 720)), ('zsyn_1000x640', Size(1000, 640))]) {
+    testWidgets(name, (tester) async {
+      tester.view.physicalSize = size;
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final zsyn = EffectCatalog.effects.entries.firstWhere((e) => e.value.name == 'Z-Syn').key;
+      final m = AppModel()..patch = (PatchEdit(PatchDump.decode(bourj)!)..setEffect(3, zsyn)).decoded;
+      m.selectedSlot = 3;
+      final fx = EffectManager(m);
+      await tester.pumpWidget(app(HomeScreen(model: m, effects: fx, ai: AIAssistant(link: m, effects: fx), midi: MidiControl(link: m))));
+      await tester.pump(const Duration(milliseconds: 500));
+      await expectLater(find.byType(HomeScreen), matchesGoldenFile('out/$name.png'));
+    });
+  }
+
   testWidgets('picker', (tester) async {
     tester.view.physicalSize = const Size(1100, 720);
     tester.view.devicePixelRatio = 1;
