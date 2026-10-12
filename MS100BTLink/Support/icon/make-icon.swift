@@ -1,4 +1,8 @@
-// Draws the MS-100BT Link app icon (1024×1024 PNG). Usage: swift make-icon.swift out.png
+// Draws the MS-100BT Link app icon (1024×1024 PNG).
+// Usage: swift make-icon.swift out.png [mac|square|foreground]
+//   mac (default): macOS tile with margins and shadow
+//   square: full-bleed tile (iOS, Android legacy icons; the platform rounds the corners)
+//   foreground: pedal and arcs only on transparent, inside Android's adaptive-icon safe zone
 import AppKit
 
 let S: CGFloat = 1024
@@ -12,16 +16,27 @@ func c(_ r: CGFloat, _ g: CGFloat, _ b: CGFloat, _ a: CGFloat = 1) -> CGColor { 
 func grad(_ colors: [CGColor]) -> CGGradient { CGGradient(colorsSpace: rgb, colors: colors as CFArray, locations: nil)! }
 func rr(_ r: CGRect, _ rad: CGFloat) -> CGPath { CGPath(roundedRect: r, cornerWidth: rad, cornerHeight: rad, transform: nil) }
 
+let mode = CommandLine.arguments.count > 2 ? CommandLine.arguments[2] : "mac"
+
 // macOS icon grid: 824×824 body centred, corner radius ≈ 185, soft drop shadow.
-let body = CGRect(x: 100, y: 100, width: 824, height: 824)
+let body = mode == "mac" ? CGRect(x: 100, y: 100, width: 824, height: 824) : CGRect(x: 0, y: 0, width: S, height: S)
+let corner: CGFloat = mode == "mac" ? 185 : 0
+if mode == "foreground" {
+    // Content (arcs + pedal) is about 690 px wide; the adaptive safe zone is 66% of 1024. Scale it in.
+    ctx.translateBy(x: 512, y: 512); ctx.scaleBy(x: 0.72, y: 0.72); ctx.translateBy(x: -540, y: -512)
+}
 ctx.saveGState()
-ctx.setShadow(offset: CGSize(width: 0, height: -12), blur: 28, color: c(0, 0, 0, 0.45))
-ctx.addPath(rr(body, 185)); ctx.setFillColor(c(0.1, 0.1, 0.11)); ctx.fillPath()
+if mode == "mac" {
+    ctx.setShadow(offset: CGSize(width: 0, height: -12), blur: 28, color: c(0, 0, 0, 0.45))
+}
+if mode != "foreground" { ctx.addPath(rr(body, corner)); ctx.setFillColor(c(0.1, 0.1, 0.11)); ctx.fillPath() }
 ctx.restoreGState()
 ctx.saveGState()
-ctx.addPath(rr(body, 185)); ctx.clip()
-ctx.drawLinearGradient(grad([c(0.2, 0.2, 0.22), c(0.07, 0.07, 0.08)]),
-                       start: CGPoint(x: 512, y: 924), end: CGPoint(x: 512, y: 100), options: [])
+if mode != "foreground" {
+    ctx.addPath(rr(body, corner)); ctx.clip()
+    ctx.drawLinearGradient(grad([c(0.2, 0.2, 0.22), c(0.07, 0.07, 0.08)]),
+                           start: CGPoint(x: 512, y: body.maxY), end: CGPoint(x: 512, y: body.minY), options: [])
+}
 // wireless arcs, top right
 ctx.setLineCap(.round)
 for (i, r) in [CGFloat(52), 96, 140].enumerated() {

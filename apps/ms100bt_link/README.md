@@ -1,17 +1,41 @@
-# ms100bt_link
+# MS-100BT Link (Flutter)
 
-MS-100BT Link: editor for the Zoom MS-100BT
+The multiplatform MS-100BT Link app: macOS, Android and iOS (iOS is diagnostics only for now), on the
+shared Dart protocol core in `packages/zoom_core`.
 
-## Getting Started
+## Flutter version
 
-This project is a starting point for a Flutter application.
+The app builds with Flutter's **main** channel and the experimental **windowing** feature, so the Mac
+build has real windows (main window, Effects, Diagnostics) like the native app. Install it next to any
+other Flutter you use:
 
-A few resources to get you started if this is your first Flutter project:
+```bash
+git clone --filter=blob:none -b main https://github.com/flutter/flutter.git ~/development/flutter-main
+~/development/flutter-main/bin/flutter config --enable-windowing
+```
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+## Build
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+```bash
+~/development/flutter-main/bin/flutter build macos
+~/development/flutter-main/bin/flutter build apk --release
+~/development/flutter-main/bin/flutter build ios --no-codesign
+```
+
+After switching Flutter versions, run `flutter clean` (and delete the app's Xcode DerivedData folder)
+if Xcode reports that a framework header "has been modified since the precompiled header was built".
+
+## Tests
+
+```bash
+~/development/flutter-main/bin/flutter test                # unit and widget tests
+~/development/flutter-main/bin/flutter test test_screens --update-goldens   # renders screens to test_screens/out
+```
+
+`test_screens` renders the screens with real fonts (it reads them from this machine's Flutter install)
+and fails on any layout overflow, including a pass over every MS-100BT effect.
+
+## Icons
+
+Generated from the native app's icon drawing: `MS100BTLink/Support/icon/make-icon.swift`
+(`mac`, `square` for iOS and Android legacy icons, `foreground` for Android adaptive icons).

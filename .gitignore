@@ -18,3 +18,4 @@ promo/renderer/.build/
 .dart_tool/
 packages/*/pubspec.lock
 build/
+dist/
