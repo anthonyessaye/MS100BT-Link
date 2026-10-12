@@ -17,10 +17,10 @@ class PatchesScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-        backgroundColor: AppColors.panel,
-        appBar: AppBar(backgroundColor: AppColors.panel, title: const Text('Patches')),
-        body: SafeArea(child: PatchList(model: model)),
-      );
+    backgroundColor: AppColors.panel,
+    appBar: AppBar(backgroundColor: AppColors.panel, title: const Text('Patches')),
+    body: SafeArea(child: PatchList(model: model)),
+  );
 }
 
 /// Sidebar panel with a header and close button (the Mac SidebarView).
@@ -31,19 +31,26 @@ class PatchesPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => ColoredBox(
-        color: AppColors.panel,
-        child: Column(children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 8, 4, 0),
-            child: Row(children: [
+    color: AppColors.panel,
+    child: Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 4, 0),
+          child: Row(
+            children: [
               const Text('Patches', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
               const Spacer(),
-              IconButton(onPressed: onClose, icon: const Icon(Icons.close, size: 16, color: AppColors.dim)),
-            ]),
+              IconButton(
+                onPressed: onClose,
+                icon: const Icon(Icons.close, size: 16, color: AppColors.dim),
+              ),
+            ],
           ),
-          Expanded(child: PatchList(model: model)),
-        ]),
-      );
+        ),
+        Expanded(child: PatchList(model: model)),
+      ],
+    ),
+  );
 }
 
 class PatchList extends StatefulWidget {
@@ -62,40 +69,42 @@ class _PatchListState extends State<PatchList> {
 
   @override
   Widget build(BuildContext context) => ListenableBuilder(
-        listenable: m,
-        builder: (context, _) {
-          final known = {...?m.library?.patches, ...m.slots};
-          final rows = [
-            for (var n = 0; n < Allowlist.patchSlots; n++)
-              if (query.isEmpty || (known[n]?.name ?? '').toLowerCase().contains(query.toLowerCase())) n
-          ];
-          return Column(children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
-              child: TextField(
-                onChanged: (v) => setState(() => query = v),
-                style: const TextStyle(fontSize: 13),
-                decoration: InputDecoration(
-                  hintText: 'Search patches',
-                  isDense: true,
-                  filled: true,
-                  fillColor: AppColors.panelRaised,
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(6), borderSide: BorderSide.none),
-                ),
+    listenable: m,
+    builder: (context, _) {
+      final known = {...?m.library?.patches, ...m.slots};
+      final rows = [
+        for (var n = 0; n < Allowlist.patchSlots; n++)
+          if (query.isEmpty || (known[n]?.name ?? '').toLowerCase().contains(query.toLowerCase())) n,
+      ];
+      return Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
+            child: TextField(
+              onChanged: (v) => setState(() => query = v),
+              style: const TextStyle(fontSize: 13),
+              decoration: InputDecoration(
+                hintText: 'Search patches',
+                isDense: true,
+                filled: true,
+                fillColor: AppColors.panelRaised,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(6), borderSide: BorderSide.none),
               ),
             ),
-            Expanded(
-              child: ListView.builder(
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                itemCount: rows.length,
-                itemBuilder: (context, i) => _row(rows[i], known[rows[i]]),
-              ),
+          ),
+          Expanded(
+            child: ListView.builder(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              itemCount: rows.length,
+              itemBuilder: (context, i) => _row(rows[i], known[rows[i]]),
             ),
-            _footer(),
-          ]);
-        },
+          ),
+          _footer(),
+        ],
       );
+    },
+  );
 
   Widget _row(int n, PatchDump? p) {
     final active = m.currentSlot == n;
@@ -104,97 +113,142 @@ class _PatchListState extends State<PatchList> {
       waitDuration: const Duration(milliseconds: 600),
       child: InkWell(
         borderRadius: BorderRadius.circular(8),
-        onTap: m.canInteract ? () async { if (await ensureUnlocked(context, m)) await m.selectPatch(n); } : null,
+        onTap: m.canInteract
+            ? () async {
+                if (await ensureUnlocked(context, m)) await m.selectPatch(n);
+              }
+            : null,
         child: Container(
           margin: const EdgeInsets.only(bottom: 2),
           padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
           decoration: BoxDecoration(color: active ? Colors.white.withValues(alpha: 0.07) : null, borderRadius: BorderRadius.circular(8)),
-          child: Row(children: [
-            Container(
-              width: 26,
-              height: 20,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(color: active ? AppColors.accent : null, borderRadius: BorderRadius.circular(4)),
-              child: Text((n + 1).toString().padLeft(2, '0'),
-                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, fontFamily: 'Menlo', color: active ? Colors.black : AppColors.dim)),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(p?.name ?? 'Unknown',
-                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: p == null ? AppColors.dim : AppColors.text)),
-                if (p != null) ...[
-                  const SizedBox(height: 3),
-                  Row(children: [
-                    for (final fx in p.effects.where((e) => !e.isEmpty))
-                      Container(
-                        width: 14,
-                        height: 6,
-                        margin: const EdgeInsets.only(right: 3),
-                        decoration: BoxDecoration(
-                          color: AppColors.category(fx.category).withValues(alpha: fx.isOn == true ? 1 : 0.4),
-                          borderRadius: BorderRadius.circular(2),
-                        ),
+          child: Row(
+            children: [
+              Container(
+                width: 26,
+                height: 20,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(color: active ? AppColors.accent : null, borderRadius: BorderRadius.circular(4)),
+                child: Text(
+                  (n + 1).toString().padLeft(2, '0'),
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    fontFamily: 'Menlo',
+                    color: active ? Colors.black : AppColors.dim,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      p?.name ?? 'Unknown',
+                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: p == null ? AppColors.dim : AppColors.text),
+                    ),
+                    if (p != null) ...[
+                      const SizedBox(height: 3),
+                      Row(
+                        children: [
+                          for (final fx in p.effects.where((e) => !e.isEmpty))
+                            Container(
+                              width: 14,
+                              height: 6,
+                              margin: const EdgeInsets.only(right: 3),
+                              decoration: BoxDecoration(
+                                color: AppColors.category(fx.category).withValues(alpha: fx.isOn == true ? 1 : 0.4),
+                                borderRadius: BorderRadius.circular(2),
+                              ),
+                            ),
+                        ],
                       ),
-                  ]),
-                ],
-              ]),
-            ),
-          ]),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 
   Widget _footer() => Container(
-        width: double.infinity,
-        color: AppColors.panelRaised,
-        padding: const EdgeInsets.all(12),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          if (m.backupProgress != null) ...[
-            Text('Reading patch ${m.backupProgress} of 50…', style: const TextStyle(fontSize: 12)),
-            const SizedBox(height: 4),
-            LinearProgressIndicator(value: m.backupProgress! / 50, color: AppColors.accent),
-          ] else
-            Text(m.library == null ? 'No backup yet: back up before saving' : 'Last backup ${m.library!.date}',
-                style: TextStyle(fontSize: 12, color: m.library == null ? AppColors.accent : AppColors.dim)),
-          const SizedBox(height: 8),
-          Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-            OutlinedButton(
-              style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 14)),
-              onPressed: m.canInteract && m.backupProgress == null ? _backup : null,
-              child: const Text('Back up all'),
-            ),
-            PopupMenuButton<int>(
-              enabled: m.canInteract && m.library != null,
-              tooltip: 'Store the current patch into a memory slot',
-              onSelected: _store,
-              itemBuilder: (_) => [
-                for (var n = 0; n < Allowlist.patchSlots; n++)
-                  PopupMenuItem(
-                    value: n,
-                    child: Text('${(n + 1).toString().padLeft(2, '0')}  ${(m.slots[n] ?? m.library?.patches[n])?.name ?? '—'}',
-                        style: const TextStyle(fontFamily: 'Menlo', fontSize: 13)),
-                  ),
-              ],
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                child: Text('Save to… ▾', style: TextStyle(color: m.canInteract && m.library != null ? AppColors.text : AppColors.dim)),
+    width: double.infinity,
+    color: AppColors.panelRaised,
+    padding: const EdgeInsets.all(12),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (m.backupProgress != null) ...[
+          Text('Reading patch ${m.backupProgress} of 50…', style: const TextStyle(fontSize: 12)),
+          const SizedBox(height: 4),
+          LinearProgressIndicator(value: m.backupProgress! / 50, color: AppColors.accent),
+        ] else
+          Text(
+            m.library == null ? 'No backup yet: back up before saving' : 'Last backup ${m.library!.date}',
+            style: TextStyle(fontSize: 12, color: m.library == null ? AppColors.accent : AppColors.dim),
+          ),
+        const SizedBox(height: 8),
+        SizedBox(
+          width: double.infinity, // so spaceBetween spreads the buttons
+          child: Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              OutlinedButton(
+                style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 14)),
+                onPressed: m.canInteract && m.backupProgress == null ? _backup : null,
+                child: const Text('Back up all'),
               ),
+              PopupMenuButton<int>(
+                enabled: m.canInteract && m.library != null,
+                tooltip: 'Store the current patch into a memory slot',
+                onSelected: _store,
+                itemBuilder: (_) => [
+                  for (var n = 0; n < Allowlist.patchSlots; n++)
+                    PopupMenuItem(
+                      value: n,
+                      child: Text(
+                        '${(n + 1).toString().padLeft(2, '0')}  ${(m.slots[n] ?? m.library?.patches[n])?.name ?? '—'}',
+                        style: const TextStyle(fontFamily: 'Menlo', fontSize: 13),
+                      ),
+                    ),
+                ],
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  child: Text('Save to… ▾', style: TextStyle(color: m.canInteract && m.library != null ? AppColors.text : AppColors.dim)),
+                ),
+              ),
+            ],
+          ),
+        ),
+        Wrap(
+          children: [
+            TextButton(
+              onPressed: m.patch == null ? null : _export,
+              child: const Text('Export patch…', style: TextStyle(fontSize: 12)),
             ),
-          ]),
-          Wrap(children: [
-            TextButton(onPressed: m.patch == null ? null : _export, child: const Text('Export patch…', style: TextStyle(fontSize: 12))),
-            TextButton(onPressed: m.canInteract ? _import : null, child: const Text('Import…', style: TextStyle(fontSize: 12))),
-          ]),
-        ]),
-      );
+            TextButton(
+              onPressed: m.canInteract ? _import : null,
+              child: const Text('Import…', style: TextStyle(fontSize: 12)),
+            ),
+          ],
+        ),
+      ],
+    ),
+  );
 
   Future<void> _backup() async {
     if (!await ensureUnlocked(context, m) || !mounted) return;
-    if (!await confirm(context, 'Back up all 50 patches?',
-        'The pedal switches through every patch (about 30 s) and returns to the current one. '
-            'Unsaved edits on the pedal are lost if its Auto Save is off.')) {
+    if (!await confirm(
+      context,
+      'Back up all 50 patches?',
+      'The pedal switches through every patch (about 30 s) and returns to the current one. '
+          'Unsaved edits on the pedal are lost if its Auto Save is off.',
+    )) {
       return;
     }
     await m.backupAll();
@@ -210,12 +264,13 @@ class _PatchListState extends State<PatchList> {
     }
     if (!await ensureUnlocked(context, m) || !mounted) return;
     if (!await confirm(
-        context,
-        'Overwrite patch ${slot + 1}?',
-        'Patch ${slot + 1} "${target?.name ?? '?'}" will be replaced by "${m.patch?.name ?? '?'}". '
-            'A copy is in the backup from ${lib!.date}.',
-        action: 'Overwrite',
-        danger: true)) {
+      context,
+      'Overwrite patch ${slot + 1}?',
+      'Patch ${slot + 1} "${target?.name ?? '?'}" will be replaced by "${m.patch?.name ?? '?'}". '
+          'A copy is in the backup from ${lib!.date}.',
+      action: 'Overwrite',
+      danger: true,
+    )) {
       return;
     }
     await m.store(slot);
