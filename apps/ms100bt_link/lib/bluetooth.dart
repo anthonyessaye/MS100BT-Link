@@ -47,6 +47,9 @@ class BluetoothBridge implements PedalTransport {
   /// Asks the system to turn Bluetooth on (Android). True if it already was.
   static Future<bool> enableBluetooth() async => await _method.invokeMethod<bool>('enableBluetooth') ?? false;
 
+  /// Asks for the Bluetooth scan permissions (Android); throws a PlatformException if refused.
+  static Future<void> ensureScanPermission() => _method.invokeMethod<void>('ensureScanPermission');
+
   /// Opens this app's page in system Settings (to allow a permission that was blocked).
   static Future<void> openSettings() => _method.invokeMethod<void>('openSettings');
 

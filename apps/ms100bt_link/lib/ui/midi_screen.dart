@@ -5,12 +5,37 @@ import 'native_ui.dart';
 import 'widgets.dart';
 
 /// MIDI controller mappings: Stomp/Patch modes, Learn, switch type. Port of the Mac MIDISettingsView.
-class MidiScreen extends StatelessWidget {
+class MidiScreen extends StatefulWidget {
   const MidiScreen({super.key, required this.midi, this.onClose});
   final MidiControl midi;
 
   /// Set when shown as a sheet on the Mac (a Done button instead of a back arrow).
   final VoidCallback? onClose;
+
+  @override
+  State<MidiScreen> createState() => _MidiScreenState();
+}
+
+class _MidiScreenState extends State<MidiScreen> {
+  MidiControl get midi => widget.midi;
+  VoidCallback? get onClose => widget.onClose;
+  final _scroll = ScrollController();
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  /// Adds a switch and shows it: it goes to the end of the list, which is usually off-screen.
+  void _addSwitch() {
+    midi.addMapping(const MidiAction(MidiActionType.toggleEffect));
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scroll.hasClients) {
+        _scroll.animateTo(_scroll.position.maxScrollExtent, duration: const Duration(milliseconds: 300), curve: Curves.easeOut);
+      }
+    });
+  }
 
   static final _actions = <MidiAction>[
     for (var i = 0; i < 6; i++) MidiAction(MidiActionType.toggleEffect, slot: i),
@@ -34,12 +59,7 @@ class MidiScreen extends StatelessWidget {
         centerTitle: false,
         title: const Text('MIDI Control', style: TextStyle(fontWeight: FontWeight.w800)),
         actions: [
-          if (isMac)
-            TextButton.icon(
-              onPressed: () => midi.addMapping(const MidiAction(MidiActionType.toggleEffect)),
-              icon: const Icon(Icons.add, size: 16),
-              label: const Text('Add switch'),
-            ),
+          if (isMac) TextButton.icon(onPressed: _addSwitch, icon: const Icon(Icons.add, size: 16), label: const Text('Add switch')),
           if (isMac)
             TextButton.icon(
               onPressed: NativeUI.showBluetoothMIDI,
@@ -70,54 +90,120 @@ class MidiScreen extends StatelessWidget {
           : FloatingActionButton.extended(
               backgroundColor: AppColors.accent,
               foregroundColor: Colors.black,
-              onPressed: () => midi.addMapping(const MidiAction(MidiActionType.toggleEffect)),
+              onPressed: _addSwitch,
               icon: const Icon(Icons.add),
               label: const Text('Add switch'),
             ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(12, 12, 12, 90),
+      body: Column(
         children: [
-          Card(
-            color: AppColors.panel,
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    midi.devices.isEmpty
-                        ? 'No MIDI devices. Connect a controller (USB, or Bluetooth MIDI paired in the system settings).'
-                        : 'Devices: ${midi.devices.map((d) => '${d.name}${d.connected ? '' : ' (not connected)'}').join(', ')}',
+          if (midi.learning != null) _learningBanner(),
+          Expanded(
+            child: ListView(
+              controller: _scroll,
+              padding: const EdgeInsets.fromLTRB(12, 12, 12, 90),
+              children: [
+                Card(
+                  color: AppColors.panel,
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          midi.devices.isEmpty
+                              ? midi.canScanBluetooth
+                                    ? 'No MIDI devices. Plug in a USB controller (with an OTG adapter), or find a Bluetooth one below.'
+                                    : 'No MIDI devices. Connect a controller (USB, or Bluetooth MIDI paired in the system settings).'
+                              : 'Devices: ${midi.devices.map((d) => '${d.name}${d.connected ? '' : ' (not connected)'}').join(', ')}',
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Last message: ${midi.lastMessage ?? '—'}',
+                          style: const TextStyle(color: AppColors.dim, fontFamily: 'monospace', fontSize: 12),
+                        ),
+                        if (midi.status != null) Text(midi.status!, style: const TextStyle(color: AppColors.accent)),
+                        if (midi.canScanBluetooth) ...[
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              const Expanded(
+                                child: Text(
+                                  'Bluetooth MIDI controllers connect here (Android does not connect them by itself).',
+                                  style: TextStyle(fontSize: 12, color: AppColors.dim),
+                                ),
+                              ),
+                              midi.scanningBluetooth
+                                  ? const Padding(
+                                      padding: EdgeInsets.all(8),
+                                      child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
+                                    )
+                                  : TextButton.icon(
+                                      onPressed: midi.scanBluetoothMidi,
+                                      icon: const Icon(Icons.bluetooth_searching, size: 18),
+                                      label: const Text('Find Bluetooth MIDI'),
+                                    ),
+                            ],
+                          ),
+                          for (final d in midi.bluetoothDevices)
+                            ListTile(
+                              contentPadding: EdgeInsets.zero,
+                              leading: Icon(Icons.piano, color: d.connected ? AppColors.accent : AppColors.dim),
+                              title: Text(d.name),
+                              trailing: d.connected
+                                  ? const Text('Connected', style: TextStyle(color: AppColors.accent))
+                                  : TextButton(onPressed: () => midi.connectDevice(d), child: const Text('Connect')),
+                            ),
+                        ],
+                        const SizedBox(height: 10),
+                        SegmentedButton<ControlMode>(
+                          segments: const [
+                            ButtonSegment(value: ControlMode.stomp, label: Text('Stomp'), icon: Icon(Icons.power_settings_new)),
+                            ButtonSegment(value: ControlMode.patch, label: Text('Patch'), icon: Icon(Icons.library_music)),
+                          ],
+                          selected: {midi.mode},
+                          onSelectionChanged: (s) => midi.setMode(s.first),
+                        ),
+                        SwitchListTile.adaptive(
+                          contentPadding: EdgeInsets.zero,
+                          value: midi.programChangeLoadsPatch,
+                          onChanged: midi.setProgramChangeLoadsPatch,
+                          title: const Text('Program Change loads the patch'),
+                          subtitle: const Text('PC 0–49 loads patch 01–50 (unless a switch is mapped to it).'),
+                        ),
+                      ],
+                    ),
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Last message: ${midi.lastMessage ?? '—'}',
-                    style: const TextStyle(color: AppColors.dim, fontFamily: 'monospace', fontSize: 12),
-                  ),
-                  if (midi.status != null) Text(midi.status!, style: const TextStyle(color: AppColors.accent)),
-                  const SizedBox(height: 10),
-                  SegmentedButton<ControlMode>(
-                    segments: const [
-                      ButtonSegment(value: ControlMode.stomp, label: Text('Stomp'), icon: Icon(Icons.power_settings_new)),
-                      ButtonSegment(value: ControlMode.patch, label: Text('Patch'), icon: Icon(Icons.library_music)),
-                    ],
-                    selected: {midi.mode},
-                    onSelectionChanged: (s) => midi.setMode(s.first),
-                  ),
-                  SwitchListTile.adaptive(
-                    contentPadding: EdgeInsets.zero,
-                    value: midi.programChangeLoadsPatch,
-                    onChanged: midi.setProgramChangeLoadsPatch,
-                    title: const Text('Program Change loads the patch'),
-                    subtitle: const Text('PC 0–49 loads patch 01–50 (unless a switch is mapped to it).'),
-                  ),
-                ],
-              ),
+                ),
+                for (final m in midi.mappings) _row(context, m),
+              ],
             ),
           ),
-          for (final m in midi.mappings) _row(context, m),
         ],
       ),
+    ),
+  );
+
+  /// Pinned while a switch is waiting for its MIDI message (Learn or a new switch).
+  Widget _learningBanner() => Container(
+    width: double.infinity,
+    color: AppColors.accent,
+    padding: const EdgeInsets.fromLTRB(16, 10, 8, 10),
+    child: Row(
+      children: [
+        const Icon(Icons.touch_app, color: Colors.black),
+        const SizedBox(width: 10),
+        const Expanded(
+          child: Text(
+            'Press the switch on your controller…',
+            style: TextStyle(color: Colors.black, fontWeight: FontWeight.w700),
+          ),
+        ),
+        TextButton(
+          style: TextButton.styleFrom(foregroundColor: Colors.black),
+          onPressed: () => midi.learn(midi.learning!),
+          child: const Text('Cancel'),
+        ),
+      ],
     ),
   );
 

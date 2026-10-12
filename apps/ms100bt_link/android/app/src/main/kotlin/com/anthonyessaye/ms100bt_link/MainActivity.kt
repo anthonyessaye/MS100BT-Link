@@ -58,6 +58,7 @@ class MainActivity : FlutterActivity() {
             "scan" -> withPermissions(scanPermissions, result) { scan(result) }
             "pair" -> withPermissions(connectPermissions + scanPermissions, result) { pair(call.argument<String>("address") ?: "", result) }
             "permissions" -> result.success(permissionState())
+            "ensureScanPermission" -> withPermissions(scanPermissions, result) { result.success(true) }
             "openSettings" -> {
                 startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", packageName, null)))
                 result.success(null)

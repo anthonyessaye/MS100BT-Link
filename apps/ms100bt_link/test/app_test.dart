@@ -147,6 +147,19 @@ void main() {
     expect(mgr.searchNotDownloaded('ms60b').single['from_pedal'], 'MS-60B');
   });
 
+  testWidgets('phone: Add switch shows a new switch waiting for a press', (tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final midi = MidiControl(link: AppModel());
+    await tester.pumpWidget(MaterialApp(home: MidiScreen(midi: midi)));
+    final before = midi.mappings.length;
+    await tester.tap(find.text('Add switch'));
+    await tester.pumpAndSettle();
+    expect(midi.mappings.length, before + 1);
+    expect(find.text('Press the switch on your controller…'), findsWidgets);
+  });
+
   test('a not-installed effect can never be placed in a proposal', () {
     final base = PatchDump.decode(bourjBytes)!;
     expect(

@@ -1,12 +1,17 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'dart:io' show Platform;
+
 import 'package:flutter/foundation.dart';
+
 import 'package:flutter_midi_command/flutter_midi_command.dart';
+import 'package:flutter_midi_command_ble/flutter_midi_command_ble.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:zoom_core/zoom_core.dart';
 
 import 'app_model.dart';
+import 'bluetooth.dart';
 
 enum MidiKind { cc, note, program }
 
@@ -180,7 +185,9 @@ class MidiControl extends ChangeNotifier {
   Future<void> start() async {
     if (_midi != null) return;
     try {
-      final m = MidiCommand();
+      // Android doesn't connect Bluetooth MIDI controllers by itself: the app finds and connects them
+      // (see scanBluetoothMidi). macOS does it in Apple's Bluetooth MIDI window.
+      final m = Platform.isAndroid ? MidiCommand(bleTransport: UniversalBleMidiTransport()) : MidiCommand();
       _midi = m;
       _rx = m.onMidiPacketReceived?.listen((p) {
         final msg = MidiInput.parse(p.data);
@@ -207,6 +214,46 @@ class MidiControl extends ChangeNotifier {
       }
     } catch (e) {
       status = 'MIDI: $e';
+    }
+    notifyListeners();
+  }
+
+  /// Android: Bluetooth MIDI controllers found by the last scan, and whether a scan is running.
+  bool get canScanBluetooth => !kIsWeb && Platform.isAndroid;
+  bool scanningBluetooth = false;
+  List<MidiDevice> get bluetoothDevices => devices.where((d) => d.type == MidiDeviceType.ble).toList();
+
+  /// Scans 8 s for Bluetooth MIDI controllers (they must be on and not connected to another device).
+  Future<void> scanBluetoothMidi() async {
+    final m = _midi;
+    if (m == null || scanningBluetooth) return;
+    scanningBluetooth = true;
+    status = null;
+    notifyListeners();
+    try {
+      await BluetoothBridge.ensureScanPermission();
+      await m.startBluetooth();
+      await m.waitUntilBluetoothIsInitialized();
+      await m.startScanningForBluetoothDevices();
+      await Future<void>.delayed(const Duration(seconds: 8));
+      m.stopScanningForBluetoothDevices();
+      devices = (await m.devices) ?? devices;
+      if (bluetoothDevices.isEmpty) {
+        status = 'No Bluetooth MIDI controllers found. Turn the controller on (not connected to another phone or computer) and scan again.';
+      }
+    } catch (e) {
+      status = 'Bluetooth MIDI: $e';
+    }
+    scanningBluetooth = false;
+    notifyListeners();
+  }
+
+  Future<void> connectDevice(MidiDevice d) async {
+    try {
+      await _midi?.connectToDevice(d);
+      devices = (await _midi?.devices) ?? devices;
+    } catch (e) {
+      status = 'Could not connect to ${d.name}: $e';
     }
     notifyListeners();
   }
