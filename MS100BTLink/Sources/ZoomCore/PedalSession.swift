@@ -53,6 +53,13 @@ public final class PedalSession: TransportDelegate {
     public private(set) var editModeActive = false
     /// Write lock. Writes (patch select, edits, send, store) are refused while false.
     public var writesEnabled = false
+    /// File-system reads (listing, backup) are refused unless a file-system session is open.
+    public var fileSystemEnabled = false
+    /// File writes/deletes additionally need this (set only while an approved change plan runs)
+    /// and `writesEnabled`.
+    public var fileSystemWritesEnabled = false
+    /// Replies to file-system commands, collected for `PedalFileSystem`.
+    public var fileSystemInbox: [[UInt8]] = []
     /// Inbound Zoom messages that arrived without a matching request (pedal pushes).
     public private(set) var unsolicitedCount = 0
     private var patchRequestedAt: Date?
@@ -101,6 +108,15 @@ public final class PedalSession: TransportDelegate {
         if message.isWrite && !writesEnabled {
             log?.note("write refused (locked): \(message.label)")
             throw WriteLocked(label: message.label)
+        }
+        switch Allowlist.fileSystemAccess(bytes) {
+        case .read? where !fileSystemEnabled:
+            log?.note("file-system access refused (not in a file-system session): \(message.label)")
+            throw WriteLocked(label: message.label + " (file-system session closed)")
+        case .write? where !(fileSystemWritesEnabled && writesEnabled):
+            log?.note("file write refused (locked): \(message.label)")
+            throw WriteLocked(label: message.label + " (file writes locked)")
+        default: break
         }
         if case .requestCurrentPatch = message { patchRequestedAt = Date() }
         do {
@@ -173,6 +189,8 @@ public final class PedalSession: TransportDelegate {
                     if let d = e.decoded { patch = d; patchAt = now }
                 }
             }
+        case .zoom(let z) where z.opcode == 0x60:
+            if case .sysex(let m) = event { fileSystemInbox.append(m) }
         case .zoom, .programChange, .controlChange:
             noteUnsolicited(decoded.summary)
         default: break

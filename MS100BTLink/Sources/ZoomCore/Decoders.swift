@@ -115,8 +115,16 @@ public struct PatchDump: Equatable, Sendable {
         }
         /// Decoded parameters, named from the catalog (empty for unknown IDs and empty slots).
         public var parameters: [ParameterValue] {
-            guard !isEmpty, raw.count == PatchDump.effectBlockSize,
-                  let def = EffectCatalog.effect(for: effectID) else { return [] }
+            guard !isEmpty, raw.count == PatchDump.effectBlockSize else { return [] }
+            guard let def = EffectCatalog.effect(for: effectID) else {
+                // Effect known only from the pedal's own file: knob names, raw values.
+                guard let z = EffectCatalog.installed[effectID] else { return [] }
+                return z.parameters.prefix(PatchDump.parameterFields.count).enumerated().map { i, n in
+                    let f = PatchDump.parameterFields[i]
+                    let v = PatchDump.bits(raw, from: f.start, width: f.width)
+                    return ParameterValue(index: i, name: n, raw: v, display: String(v))
+                }
+            }
             return def.parameters.enumerated().compactMap { i, p in
                 guard i < PatchDump.parameterFields.count else { return nil }
                 let f = PatchDump.parameterFields[i]

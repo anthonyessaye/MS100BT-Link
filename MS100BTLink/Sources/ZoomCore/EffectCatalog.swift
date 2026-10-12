@@ -50,7 +50,15 @@ public enum EffectCatalog {
     ]
 
     public static func effect(for id: UInt32) -> Effect? { effects[id] }
-    public static func name(for id: UInt32) -> String? { effects[id]?.name }
+    public static func name(for id: UInt32) -> String? { effects[id]?.name ?? installed[id]?.displayName }
+
+    /// Effects read from the pedal's own files (e.g. downloaded or custom ones), keyed by patch effect ID.
+    /// They have names and knob names but no known value ranges.
+    nonisolated(unsafe) public static var installed: [UInt32: ZDLInfo] = [:]
+
+    public static func register(_ infos: some Sequence<ZDLInfo>) {
+        for z in infos where !z.isSharedLibrary { installed[z.patchEffectID] = z }
+    }
     public static func category(for id: UInt32) -> String? { categories[UInt8(truncatingIfNeeded: id >> 24)] }
 
     /// 226 effects, decoded once on first use.

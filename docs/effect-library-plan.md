@@ -2,8 +2,11 @@
 
 Source reviewed: [lopezchau/zoom-ms100bt-bluetooth](https://github.com/lopezchau/zoom-ms100bt-bluetooth)
 (MIT, Swift, macOS). It installs effects on an MS-100BT over the same Bluetooth link we use, and documents every
-step as verified on real hardware (firmware 1.30, device ID 0x5E, the same as ours). Status: **plan only.
-Nothing here is implemented.** Installing effects needs the owner's explicit go-ahead (see "Decision needed").
+step as verified on real hardware (firmware 1.30, device ID 0x5E, the same as ours).
+
+**Status (2026-10-11): approved by the owner and implemented in the Mac app** (Effects window): read/back up/install/
+remove with every rule below, a risk confirmation, and 30+ tests against a simulated pedal. **Not yet run on our
+pedal.** First real use: a full backup, then one small effect verified on an MS-100BT (e.g. Z-Syn).
 
 ## How adding effects works
 

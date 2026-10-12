@@ -32,6 +32,7 @@ struct MS100BTLinkApp: App {
     @StateObject private var model = LinkModel()
     @StateObject private var midi = MIDIControl()
     @StateObject private var ai = AIAssistant()
+    @StateObject private var effects = EffectManager()
 
     init() { Self.migrateSettings() }
 
@@ -53,15 +54,20 @@ struct MS100BTLinkApp: App {
                 .environmentObject(model)
                 .environmentObject(midi)
                 .environmentObject(ai)
+                .environmentObject(effects)
                 .frame(minWidth: 1040, minHeight: 660)
                 .preferredColorScheme(.dark)
-                .onAppear { midi.model = model; ai.link = model }
+                .onAppear { midi.model = model; ai.link = model; ai.effects = effects; effects.link = model }
         }
         .windowStyle(.hiddenTitleBar)
         .commands {
             CommandGroup(after: .windowArrangement) {
                 OpenDiagnosticsButton()
             }
+        }
+
+        Window("Effects", id: "effects") {
+            EffectsManagerView().environmentObject(effects).environmentObject(model)
         }
 
         Window("Diagnostics", id: "diagnostics") {

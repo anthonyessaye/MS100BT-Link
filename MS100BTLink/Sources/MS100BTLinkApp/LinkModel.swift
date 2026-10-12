@@ -222,8 +222,26 @@ final class LinkModel: ObservableObject {
         pollTimer = nil
     }
 
+    /// True while the Effects Manager talks to the pedal's file system: no polling, no edits.
+    @Published var fileSystemActive = false
+
+    /// Stops live polling and hands the connection to a file-system session.
+    func pauseForFileSystem() {
+        fileSystemActive = true
+        stopPolling()
+        verifyTask?.cancel()
+        verifyTask = nil
+    }
+
+    /// Returns from a file-system session: re-reads the patch and restarts live updates.
+    func resumeAfterFileSystem() async {
+        fileSystemActive = false
+        guard let s = session, isOpen else { return }
+        if liveUpdates { await startLive() } else if let p = await s.readPatch() { patch = p }
+    }
+
     private func pollTick() {
-        guard let s = session, isOpen, liveUpdates, busy == nil, backupProgress == nil,
+        guard let s = session, isOpen, liveUpdates, busy == nil, backupProgress == nil, !fileSystemActive,
               pendingEdits.isEmpty, verifyTask == nil else { return }
         if let last = s.lastRxAt, Date().timeIntervalSince(last) < 1.5 { return }
         Task {
@@ -305,6 +323,7 @@ final class LinkModel: ObservableObject {
     /// Runs a write action and reports failures in the console and banner.
     private func write(_ label: String, _ action: (PedalSession) async throws -> Void) async {
         guard let s = session, isOpen else { hint = "Connect first."; return }
+        guard !fileSystemActive else { hint = "Wait for the Effects Manager to finish."; return }
         guard editingEnabled else { hint = "Unlock editing first (Device panel)."; return }
         do {
             try await action(s)

@@ -28,6 +28,9 @@ public enum Message: Equatable, Sendable {
     case sendPatch(frame: [UInt8])
     /// `F0 52 00 <id> 32 01 00 00 <pp> 00 00 00 00 00 F7` — store the active patch into slot pp.
     case storePatch(deviceID: UInt8, slot: Int)
+    /// `F0 52 00 <id> 60 <body…> F7` — pedal file system (effect files and menu). Only the exact
+    /// shapes in `Allowlist.validateFileSystem` pass, and the session gates reads and writes separately.
+    case fileSystem(deviceID: UInt8, body: [UInt8])
 
     public var isWrite: Bool {
         switch self {
@@ -52,6 +55,8 @@ public enum Message: Equatable, Sendable {
         case .storePatch(let id, let slot):
             return [0xF0, 0x52, 0x00, id, 0x32, 0x01, 0x00, 0x00, UInt8(clamping: slot),
                     0x00, 0x00, 0x00, 0x00, 0x00, 0xF7]
+        case .fileSystem(let id, let body):
+            return [0xF0, 0x52, 0x00, id, 0x60] + body + [0xF7]
         }
     }
 
@@ -69,6 +74,7 @@ public enum Message: Equatable, Sendable {
                               : "FX\(slot + 1) P\(param - 2) = \(value) (0x31)"
         case .sendPatch: return "send patch (0x28)"
         case .storePatch(_, let slot): return "STORE to patch \(slot + 1) (0x32)"
+        case .fileSystem(_, let body): return String(format: "file system 60 %02X", body.first ?? 0)
         }
     }
 
@@ -99,7 +105,6 @@ public enum Allowlist {
         0x17: "unknown, firmware template",
         0x20: "unknown, firmware template",
         0x21: "unknown, firmware template",
-        0x60: "filesystem access (updater ZDL upload)",
         0x61: "Bluetooth-module function (updater)",
     ]
 
@@ -138,6 +143,8 @@ public enum Allowlist {
             guard f.count == PatchDump.expectedLength else { throw refuse("patch must be \(PatchDump.expectedLength) bytes") }
             guard let p = PatchDump.decode(f) else { throw refuse("patch does not decode") }
             if let problem = p.validationProblem { throw refuse("patch failed validation: \(problem)") }
+        case 0x60:
+            try validateFileSystem(f)
         case 0x32:
             let template: [UInt8] = [0xF0, 0x52, 0x00, id, 0x32, 0x01, 0x00, 0x00, f.count > 8 ? f[8] : 0,
                                      0x00, 0x00, 0x00, 0x00, 0x00, 0xF7]
@@ -150,6 +157,85 @@ public enum Allowlist {
 
     public static func isAllowed(_ frame: [UInt8]) -> Bool {
         (try? validate(frame)) != nil
+    }
+
+    // MARK: file system
+
+    public enum FileSystemAccess { case read, write }
+
+    /// Files never written or deleted (Bluetooth pairing data).
+    public static let protectedFiles: Set<String> = ["PAIR.DAT"]
+    /// Largest write/read block (the pedal's maxFFSWriteSize on the MS-100BT).
+    public static let maxFileBlock = 4096
+
+    /// nil if `f` is not a file-system message; otherwise whether it reads or changes the pedal's files.
+    public static func fileSystemAccess(_ f: [UInt8]) -> FileSystemAccess? {
+        guard f.count >= 7, f[0] == 0xF0, f[1] == 0x52, f[4] == 0x60 else { return nil }
+        switch f[5] {
+        case 0x24, 0x23: return .write
+        case 0x20: return f.count > 6 && f[6] == 0x01 ? .write : .read
+        default: return .read
+        }
+    }
+
+    /// Exact shapes of the file-system commands verified on an MS-100BT (lopezchau/zoom-ms100bt-bluetooth,
+    /// docs/PROTOCOL.md). Everything else in the 0x60 family (e.g. `60 06`, the updater's preparation step)
+    /// stays blocked.
+    static func validateFileSystem(_ f: [UInt8]) throws {
+        func refuse(_ why: String) -> AllowlistViolation { AllowlistViolation(frame: f, reason: "file system: " + why) }
+        let body = Array(f[5..<(f.count - 1)])
+        guard let sub = body.first else { throw refuse("empty") }
+
+        func name(from i: Int) throws -> String {
+            // `<name bytes> 00` must end the body exactly.
+            guard body.count > i + 1, body.last == 0 else { throw refuse("missing file name terminator") }
+            let raw = Array(body[i..<(body.count - 1)])
+            guard let n = String(bytes: raw, encoding: .ascii), FSCodec.isValidName(n) else { throw refuse("invalid file name") }
+            return n
+        }
+        func writable(_ n: String) throws {
+            guard !protectedFiles.contains(n.uppercased()) else { throw refuse("\(n) is protected") }
+            guard FSCodec.isSafeEffectName(n) || n == EffectIndex.fileName else {
+                throw refuse("\(n) is not an 8.3 .ZDL effect or the effect menu")
+            }
+        }
+
+        switch sub {
+        case 0x02, 0x09, 0x27: // FS info, end of session, end of listing
+            guard body.count == 1 else { throw refuse("bad length") }
+        case 0x05: // ACK
+            guard body == [0x05, 0x00] else { throw refuse("bad ACK") }
+        case 0x29: // disk usage
+            guard body == [0x29, 0, 0, 0, 0, 0] else { throw refuse("bad disk-usage request") }
+        case 0x25, 0x26: // find first / next, pattern "*" only
+            guard body == [sub, 0, 0, 0x2A, 0] else { throw refuse("bad listing request") }
+        case 0x20: // open: mode 02 = read, 01 = write
+            guard body.count >= 13, body[1] == 0x01 || body[1] == 0x02, body[2..<11].allSatisfy({ $0 == 0 }) else {
+                throw refuse("bad open")
+            }
+            let n = try name(from: 11)
+            if body[1] == 0x01 { try writable(n) }
+        case 0x22: // read block: handle(5) size(5)
+            guard body.count == 11, let size = FSCodec.u35(body, 6), (1...UInt32(maxFileBlock)).contains(size) else {
+                throw refuse("bad read")
+            }
+        case 0x21: // close: handle(5)
+            guard body.count == 6 else { throw refuse("bad close") }
+        case 0x24: // delete
+            try writable(try name(from: 1))
+        case 0x23: // write block: handle(5) size(5) packed data, crc(5)
+            guard body.count > 16, let size = FSCodec.u35(body, 6), (1...UInt32(maxFileBlock)).contains(size) else {
+                throw refuse("bad write header")
+            }
+            let n = Int(size)
+            let packed = Array(body[11..<(body.count - 5)])
+            guard packed.count == n + (n + 6) / 7 else { throw refuse("block length does not match its size") }
+            let data = PatchDump.unpack7(packed[...])
+            guard data.count == n, let crc = FSCodec.u35(body, body.count - 5),
+                  crc ^ 0xFFFF_FFFF == FSCodec.crc32(data) else { throw refuse("block checksum does not match its data") }
+        default:
+            throw refuse(String(format: "command %02X is not allowlisted", sub))
+        }
     }
 
     /// True for frames that change pedal state (patch select, edits, send, store).

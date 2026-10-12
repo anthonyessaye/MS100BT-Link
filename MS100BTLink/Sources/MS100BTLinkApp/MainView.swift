@@ -105,6 +105,9 @@ struct TopBar: View {
             }
             .buttonStyle(PillButtonStyle(active: model.editingEnabled))
             .help(model.editingEnabled ? "Changes are sent to the pedal. Click to lock." : "Unlock to change the pedal from the Mac.")
+            Button { openWindow(id: "effects") } label: { Label("Effects", systemImage: "square.stack.3d.down.right") }
+                .buttonStyle(PillButtonStyle(active: false))
+                .help("Install and remove effects on the pedal")
             Button { sidebar = sidebar == .assistant ? nil : .assistant } label: { Label("AI", systemImage: "sparkles") }
                 .buttonStyle(PillButtonStyle(active: sidebar == .assistant))
                 .help("Tone assistant: describe a sound, get a patch")

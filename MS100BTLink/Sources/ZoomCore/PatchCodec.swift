@@ -32,7 +32,7 @@ extension PatchDump {
         guard lengthMatchesMS50G, unpacked.count == 122 else { return "unexpected length \(raw.count)" }
         guard let name, !name.contains("?") else { return "name has unsupported characters" }
         for e in effects where !e.isEmpty {
-            guard EffectCatalog.effect(for: e.effectID) != nil else {
+            guard EffectCatalog.effect(for: e.effectID) != nil || EffectCatalog.installed[e.effectID] != nil else {
                 return String(format: "FX%d has unknown effect ID %08X", e.index + 1, e.effectID)
             }
             if let bad = e.parameters.first(where: { $0.display == nil }) {
