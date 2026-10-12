@@ -5,6 +5,7 @@ import 'package:zoom_core/zoom_core.dart';
 
 import '../ai_assistant.dart';
 import '../app_model.dart';
+import '../bluetooth.dart';
 import '../effect_manager.dart';
 import '../midi_control.dart';
 import 'assistant_screen.dart';
@@ -64,10 +65,16 @@ class _HomeScreenState extends State<HomeScreen> {
           });
     }
     // Quitting leaves edit mode (0x51) and closes the link first, as the native app does.
-    _exit = AppLifecycleListener(onExitRequested: () async {
-      await m.disconnect();
-      return AppExitResponse.exit;
-    });
+    _exit = AppLifecycleListener(
+      onExitRequested: () async {
+        await m.disconnect();
+        return AppExitResponse.exit;
+      },
+      // Back from Settings (permission allowed, Bluetooth turned on): look again.
+      onResume: () {
+        if (!m.isConnected) m.refreshDevices();
+      },
+    );
   }
 
   late final AppLifecycleListener _exit;
@@ -829,7 +836,9 @@ class _HomeScreenState extends State<HomeScreen> {
             const SizedBox(height: 18),
             Text(
               m.device == null
-                  ? "Pair it in this device's Bluetooth settings first (on the pedal: knob 1 → MENU → Bluetooth → pairing)."
+                  ? canScan
+                      ? 'Scan for it below, or pair it in Bluetooth settings.'
+                      : "Pair it in this device's Bluetooth settings first (on the pedal: knob 1 → MENU → Bluetooth → pairing)."
                   : 'Turn the pedal on and keep it near this device.',
               textAlign: TextAlign.center,
               style: const TextStyle(color: AppColors.dim),
@@ -853,15 +862,80 @@ class _HomeScreenState extends State<HomeScreen> {
                   Text(m.busy!, style: const TextStyle(fontSize: 13)),
                 ],
               )
+            else if (m.bluetoothProblem != null)
+              _bluetoothProblem(m.bluetoothProblem!)
             else if (m.device == null)
               Pill(label: 'Refresh devices', active: true, onTap: m.refreshDevices)
             else
               Pill(label: 'Connect', active: true, onTap: m.connect),
+            if (canScan && m.bluetoothProblem == null && m.busy == null) ...[
+              const SizedBox(height: 22),
+              _scanSection(),
+            ],
           ],
         ),
       ),
     ),
   );
+
+  /// Android can find and pair the pedal in the app; other platforms pair in system settings.
+  bool get canScan => !isMac && Theme.of(context).platform == TargetPlatform.android;
+
+  Widget _bluetoothProblem(BluetoothProblem p) {
+    final (text, button) = switch (p) {
+      BluetoothProblem.off => ('Bluetooth is off.', 'Turn on Bluetooth'),
+      BluetoothProblem.permission => (
+          'MS-100BT Link needs the Nearby devices (Bluetooth) permission to find and talk to your pedal. '
+              'It is only used for the pedal.',
+          'Allow Bluetooth'
+        ),
+      BluetoothProblem.blocked => (
+          'Bluetooth permission is turned off for this app. Open Settings → Permissions → Nearby devices and choose Allow.',
+          'Open Settings'
+        ),
+    };
+    return Column(mainAxisSize: MainAxisSize.min, children: [
+      Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(color: AppColors.accent.withValues(alpha: 0.14), borderRadius: BorderRadius.circular(10)),
+        child: Row(children: [
+          const Icon(Icons.bluetooth_disabled, color: AppColors.accent),
+          const SizedBox(width: 10),
+          Expanded(child: Text(text)),
+        ]),
+      ),
+      const SizedBox(height: 14),
+      Pill(label: button, active: true, onTap: m.fixBluetooth),
+    ]);
+  }
+
+  Widget _scanSection() => Column(crossAxisAlignment: CrossAxisAlignment.stretch, mainAxisSize: MainAxisSize.min, children: [
+        Row(children: [
+          const Expanded(
+            child: Text('New pedal? Put it in pairing mode (knob 1 → MENU → Bluetooth → PAIRING), then scan.',
+                style: TextStyle(color: AppColors.dim, fontSize: 13)),
+          ),
+          const SizedBox(width: 10),
+          m.scanning
+              ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+              : Pill(icon: Icons.bluetooth_searching, label: 'Scan', onTap: m.scanForPedals),
+        ]),
+        for (final d in m.nearby)
+          Card(
+            color: AppColors.panelRaised,
+            child: ListTile(
+              leading: Icon(PairedDevice('', d.name).looksLikePedal ? Icons.music_note : Icons.bluetooth,
+                  color: PairedDevice('', d.name).looksLikePedal ? AppColors.accent : AppColors.dim),
+              title: Text(d.name),
+              subtitle: Text(d.address, style: const TextStyle(fontFamily: 'monospace', fontSize: 12)),
+              trailing: d.paired
+                  ? const Text('Paired', style: TextStyle(color: AppColors.dim))
+                  : m.pairing == d.address
+                      ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                      : TextButton(onPressed: m.pairing == null ? () => m.pairWith(d.address) : null, child: const Text('Pair')),
+            ),
+          ),
+      ]);
 
   // Actions
 

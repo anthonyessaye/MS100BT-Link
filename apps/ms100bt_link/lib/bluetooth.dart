@@ -33,6 +33,23 @@ class BluetoothBridge implements PedalTransport {
     return bridge;
   }
 
+  /// Nearby devices (Android: 12-second classic Bluetooth discovery; the pedal must be in pairing mode).
+  static Future<List<({String address, String name, bool paired})>> scan() async {
+    final list = await _method.invokeListMethod<Map<dynamic, dynamic>>('scan') ?? const [];
+    return [
+      for (final d in list) (address: d['address'] as String, name: d['name'] as String? ?? '?', paired: d['paired'] == true)
+    ];
+  }
+
+  /// Pairs with a discovered device (Android). True when paired.
+  static Future<bool> pair(String address) async => await _method.invokeMethod<bool>('pair', {'address': address}) ?? false;
+
+  /// Asks the system to turn Bluetooth on (Android). True if it already was.
+  static Future<bool> enableBluetooth() async => await _method.invokeMethod<bool>('enableBluetooth') ?? false;
+
+  /// Opens this app's page in system Settings (to allow a permission that was blocked).
+  static Future<void> openSettings() => _method.invokeMethod<void>('openSettings');
+
   /// Platform notes (iOS: connected MFi accessories and their protocol names).
   static Future<Map<String, Object?>> diagnostics() async =>
       (await _method.invokeMapMethod<String, Object?>('diagnostics')) ?? const {};

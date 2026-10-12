@@ -188,4 +188,30 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
     await expectLater(find.byType(EffectsScreen), matchesGoldenFile('out/mac_effects_window.png'));
   });
+
+  for (final state in ['permission', 'scan']) {
+    testWidgets('android_$state', (tester) async {
+      debugIsMac = false;
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final m = AppModel();
+      final fx = EffectManager(m);
+      await tester.pumpWidget(app(HomeScreen(model: m, effects: fx, ai: AIAssistant(link: m, effects: fx), midi: MidiControl(link: m))));
+      await tester.pump(const Duration(milliseconds: 300));
+      m.hint = null;
+      if (state == 'permission') {
+        m.bluetoothProblem = BluetoothProblem.permission;
+      } else {
+        m.bluetoothProblem = null;
+        m.nearby = [
+          (address: '00:11:22:33:44:55', name: 'ZOOM MS-100BT', paired: false),
+          (address: 'AA:BB:CC:DD:EE:FF', name: 'JBL Flip 5', paired: true),
+        ];
+      }
+      m.notifyListeners();
+      await tester.pump(const Duration(milliseconds: 300));
+      await expectLater(find.byType(HomeScreen), matchesGoldenFile('out/android_$state.png'));
+    });
+  }
 }

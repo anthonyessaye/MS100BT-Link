@@ -1,11 +1,14 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart' show PlatformException;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:zoom_core/zoom_core.dart';
 
 import 'bluetooth.dart';
 import 'storage.dart';
+
+enum BluetoothProblem { off, permission, blocked }
 
 /// App state: connection, current patch, editing lock, live updates, patch backups. Mirrors the Mac app's LinkModel.
 class AppModel extends ChangeNotifier {
@@ -56,14 +59,90 @@ class AppModel extends ChangeNotifier {
   bool get isConnected => session?.identity != null;
   bool get canInteract => isConnected && patch != null && !fileSystemActive;
 
+  /// Why Bluetooth can't be used right now (shown with the matching fix on the connect screen).
+  BluetoothProblem? bluetoothProblem;
+
+  /// In-app scan for nearby pedals (Android).
+  bool scanning = false;
+  List<({String address, String name, bool paired})> nearby = [];
+  String? pairing;
+
+  BluetoothProblem? _problemOf(Object e) => switch (e) {
+        PlatformException(code: 'bluetooth_off') => BluetoothProblem.off,
+        PlatformException(code: 'permission') => BluetoothProblem.permission,
+        PlatformException(code: 'permission_blocked') => BluetoothProblem.blocked,
+        _ => null,
+      };
+
   Future<void> refreshDevices() async {
     try {
       devices = await BluetoothBridge.pairedDevices();
       device ??= devices.where((d) => d.looksLikePedal).firstOrNull ?? devices.firstOrNull;
-      diagnostics = await BluetoothBridge.diagnostics();
+      bluetoothProblem = null;
     } catch (e) {
-      hint = 'Bluetooth: $e';
+      bluetoothProblem = _problemOf(e);
+      if (bluetoothProblem == null) hint = 'Bluetooth: $e';
     }
+    try {
+      diagnostics = await BluetoothBridge.diagnostics();
+    } catch (_) {}
+    notifyListeners();
+  }
+
+  /// Fixes the current Bluetooth problem: asks again, opens Settings, or asks to turn Bluetooth on.
+  Future<void> fixBluetooth() async {
+    try {
+      switch (bluetoothProblem) {
+        case BluetoothProblem.off:
+          await BluetoothBridge.enableBluetooth();
+          await Future<void>.delayed(const Duration(seconds: 2));
+        case BluetoothProblem.blocked:
+          await BluetoothBridge.openSettings();
+          return; // refreshed when the app comes back (see HomeScreen)
+        case BluetoothProblem.permission || null:
+          break;
+      }
+    } catch (_) {}
+    await refreshDevices();
+  }
+
+  /// Scans for nearby devices; pedals first.
+  Future<void> scanForPedals() async {
+    if (scanning) return;
+    scanning = true;
+    nearby = [];
+    notifyListeners();
+    try {
+      final found = await BluetoothBridge.scan();
+      bool pedal(String n) => PairedDevice('', n).looksLikePedal;
+      nearby = found..sort((a, b) => (pedal(b.name) ? 1 : 0) - (pedal(a.name) ? 1 : 0));
+      bluetoothProblem = null;
+      if (nearby.isEmpty) hint = 'No devices found. Put the pedal in pairing mode (knob 1 → MENU → Bluetooth → PAIRING) and scan again.';
+    } catch (e) {
+      bluetoothProblem = _problemOf(e);
+      if (bluetoothProblem == null) hint = 'Scan failed: $e';
+    }
+    scanning = false;
+    notifyListeners();
+  }
+
+  /// Pairs with a scanned device, then selects it.
+  Future<void> pairWith(String address) async {
+    pairing = address;
+    notifyListeners();
+    try {
+      final ok = await BluetoothBridge.pair(address);
+      if (!ok) hint = 'Pairing did not finish. Check that the pedal is in pairing mode and try again.';
+      await refreshDevices();
+      if (ok) {
+        device = devices.where((d) => d.address == address).firstOrNull ?? device;
+        nearby = [];
+      }
+    } catch (e) {
+      bluetoothProblem = _problemOf(e);
+      if (bluetoothProblem == null) hint = 'Pairing failed: $e';
+    }
+    pairing = null;
     notifyListeners();
   }
 
@@ -93,7 +172,8 @@ class AppModel extends ChangeNotifier {
       currentSlot = inferSlot();
       if (liveUpdates) await _startLive();
     } catch (e) {
-      hint = 'Could not connect: $e';
+      bluetoothProblem = _problemOf(e);
+      if (bluetoothProblem == null) hint = 'Could not connect: $e';
       await disconnect();
     }
     busy = null;
