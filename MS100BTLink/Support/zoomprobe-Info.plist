@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleIdentifier</key>
-	<string>local.ms100btlink.zoomprobe</string>
+	<string>com.anthonyessaye.ms100bt.zoomprobe</string>
 	<key>CFBundleName</key>
 	<string>zoomprobe</string>
 	<key>NSBluetoothAlwaysUsageDescription</key>

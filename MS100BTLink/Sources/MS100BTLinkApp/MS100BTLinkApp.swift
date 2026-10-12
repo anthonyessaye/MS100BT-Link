@@ -26,6 +26,20 @@ struct MS100BTLinkApp: App {
     @StateObject private var model = LinkModel()
     @StateObject private var midi = MIDIControl()
 
+    init() { Self.migrateSettings() }
+
+    /// v0.1 shipped as `local.ms100btlink.app`; settings live per bundle ID, so copy them once.
+    private static func migrateSettings() {
+        let d = UserDefaults.standard
+        guard !d.bool(forKey: "migratedFromLocalID"),
+              let old = UserDefaults(suiteName: "local.ms100btlink.app") else { return }
+        for key in ["midiMappings", "midiPCLoadsPatch", "midiMode", "midiMappingsV2", "editingUnlocked", "rememberUnlock"]
+        where d.object(forKey: key) == nil {
+            if let v = old.object(forKey: key) { d.set(v, forKey: key) }
+        }
+        d.set(true, forKey: "migratedFromLocalID")
+    }
+
     var body: some Scene {
         WindowGroup("MS-100BT Link") {
             MainView()

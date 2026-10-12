@@ -26,6 +26,7 @@ make_bundle() { # name exec_name bundle_id extra_plist_keys
   <key>CFBundleIdentifier</key><string>$3</string>
   <key>CFBundleName</key><string>$1</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
+  <key>NSHumanReadableCopyright</key><string>© 2026 Anthony Essaye (anthonyessaye@outlook.com). MIT License.</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>0.1</string>
   <key>CFBundleVersion</key><string>1</string>
@@ -40,5 +41,5 @@ EOF
   echo "built $app"
 }
 
-make_bundle "MS-100BT Link" MS100BTLinkApp local.ms100btlink.app "<key>NSHighResolutionCapable</key><true/>"
-make_bundle "zoomprobe" zoomprobe local.ms100btlink.zoomprobe "<key>LSBackgroundOnly</key><true/>"
+make_bundle "MS-100BT Link" MS100BTLinkApp com.anthonyessaye.ms100bt "<key>NSHighResolutionCapable</key><true/>"
+make_bundle "zoomprobe" zoomprobe com.anthonyessaye.ms100bt.zoomprobe "<key>LSBackgroundOnly</key><true/>"

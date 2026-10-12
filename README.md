@@ -30,6 +30,11 @@ swift test                 # protocol, codec and allowlist tests
 
 More detail (safety allowlist, CLI, MIDI) is in [MS100BTLink/README.md](MS100BTLink/README.md).
 
+## License
+
+[MIT](LICENSE) © 2026 Anthony Essaye ([anthonyessaye@outlook.com](mailto:anthonyessaye@outlook.com)). Reuse it freely.
+Bundle identifier: `com.anthonyessaye.ms100bt`.
+
 ## Credits
 
 Effect names and parameter tables come from [zoom-explorer](https://github.com/thammer/zoom-explorer) by Thomas Hammer (MIT). See [THIRD_PARTY_NOTICES.md](MS100BTLink/THIRD_PARTY_NOTICES.md). MS-series message reference: [zoom-ms-utility](https://github.com/multistomp/zoom-ms-utility).
