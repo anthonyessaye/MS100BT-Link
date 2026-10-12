@@ -26,8 +26,14 @@ enum Sidebar { patches, assistant }
 /// stage, the signal chain, a status line, and Patches / AI docked on the right. Phones get the same
 /// pieces in a compact bar, with Patches and AI as pages.
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key, required this.model, required this.effects, required this.ai, required this.midi,
-      this.initialSidebar = Sidebar.patches});
+  const HomeScreen({
+    super.key,
+    required this.model,
+    required this.effects,
+    required this.ai,
+    required this.midi,
+    this.initialSidebar = Sidebar.patches,
+  });
   final AppModel model;
   final EffectManager effects;
   final AIAssistant ai;
@@ -47,6 +53,10 @@ class _HomeScreenState extends State<HomeScreen> {
   /// Room to dock Patches / AI on the right.
   bool get wide => MediaQuery.sizeOf(context).width >= 760;
 
+  /// Phones get a bottom tab bar (Board, Patches, AI, More) instead of hidden menus; tablets and the Mac don't.
+  bool get phone => !isMac && !wide;
+  int tab = 0;
+
   /// Room for the full pill bar (about 1,100 px); narrower windows get the compact bar.
   /// The Mac always gets it (its window never goes below 1040 px, as in the native app).
   bool get wideBar => isMac || MediaQuery.sizeOf(context).width >= 1100;
@@ -59,12 +69,14 @@ class _HomeScreenState extends State<HomeScreen> {
     widget.midi.requestUnlock = () async => mounted && await ensureUnlocked();
     widget.midi.start();
     if (isMac) {
-      NativeUI.onMenu((id) => switch (id) {
-            'effects' => _openEffects(),
-            'midi' => _openMidi(),
-            'diagnostics' => _openDiagnostics(),
-            _ => null,
-          });
+      NativeUI.onMenu(
+        (id) => switch (id) {
+          'effects' => _openEffects(),
+          'midi' => _openMidi(),
+          'diagnostics' => _openDiagnostics(),
+          _ => null,
+        },
+      );
     }
     // Quitting leaves edit mode (0x51) and closes the link first, as the native app does.
     _exit = AppLifecycleListener(
@@ -116,30 +128,67 @@ class _HomeScreenState extends State<HomeScreen> {
   void _openEffects() {
     if (isMac && canOpenWindows) {
       // Its own window, like the native app's Effects window.
-      MacWindows.open(context, 'effects', title: 'Effects', size: const Size(1100, 720), minSize: const Size(980, 640),
-          builder: (close) => appShell(EffectsScreen(model: m, mgr: widget.effects, onClose: close, inWindow: true)));
+      MacWindows.open(
+        context,
+        'effects',
+        title: 'Effects',
+        size: const Size(1100, 720),
+        minSize: const Size(980, 640),
+        builder: (close) => appShell(EffectsScreen(model: m, mgr: widget.effects, onClose: close, inWindow: true)),
+      );
     } else if (isMac) {
-      showSheet<void>(context, Builder(builder: (c) => EffectsScreen(model: m, mgr: widget.effects, onClose: () => Navigator.pop(c))));
+      showSheet<void>(
+        context,
+        Builder(
+          builder: (c) => EffectsScreen(model: m, mgr: widget.effects, onClose: () => Navigator.pop(c)),
+        ),
+      );
     } else {
       _push(EffectsScreen(model: m, mgr: widget.effects));
     }
   }
+
   void _openMidi() => isMac
-      ? showSheet<void>(context, Builder(builder: (c) => MidiScreen(midi: widget.midi, onClose: () => Navigator.pop(c))),
-          size: const Size(760, 640))
+      ? showSheet<void>(
+          context,
+          Builder(
+            builder: (c) => MidiScreen(midi: widget.midi, onClose: () => Navigator.pop(c)),
+          ),
+          size: const Size(760, 640),
+        )
       : _push(MidiScreen(midi: widget.midi));
   void _openDiagnostics() {
     if (isMac && canOpenWindows) {
-      MacWindows.open(context, 'diagnostics', title: 'Diagnostics', size: const Size(960, 620), minSize: const Size(860, 560),
-          builder: (close) => appShell(DiagnosticsView(model: m, onClose: close, inWindow: true)));
+      MacWindows.open(
+        context,
+        'diagnostics',
+        title: 'Diagnostics',
+        size: const Size(960, 620),
+        minSize: const Size(860, 560),
+        builder: (close) => appShell(DiagnosticsView(model: m, onClose: close, inWindow: true)),
+      );
     } else if (isMac) {
-      showSheet<void>(context, Builder(builder: (c) => DiagnosticsView(model: m, onClose: () => Navigator.pop(c))), size: const Size(900, 600));
+      showSheet<void>(
+        context,
+        Builder(
+          builder: (c) => DiagnosticsView(model: m, onClose: () => Navigator.pop(c)),
+        ),
+        size: const Size(900, 600),
+      );
     } else {
-      _push(Builder(builder: (c) => DiagnosticsView(model: m, onClose: () => Navigator.pop(c))));
+      _push(
+        Builder(
+          builder: (c) => DiagnosticsView(model: m, onClose: () => Navigator.pop(c)),
+        ),
+      );
     }
   }
 
   void _toggle(Sidebar s) {
+    if (phone) {
+      setState(() => tab = s == Sidebar.patches ? 1 : 2);
+      return;
+    }
     if (!wide) {
       _push(s == Sidebar.patches ? PatchesScreen(model: m) : AssistantScreen(model: m, ai: widget.ai));
       return;
@@ -150,50 +199,189 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) => ListenableBuilder(
     listenable: Listenable.merge([m, widget.midi]),
-    builder: (context, _) => Scaffold(
-      body: DecoratedBox(
-        decoration: const BoxDecoration(gradient: AppColors.backgroundGradient),
-        child: SafeArea(
-          child: DefaultTextStyle.merge(
-            style: const TextStyle(color: AppColors.text),
-            child: Column(
+    builder: (context, _) => phone ? _phoneScaffold() : _desktopScaffold(),
+  );
+
+  Widget _background(Widget child) => DecoratedBox(
+    decoration: const BoxDecoration(gradient: AppColors.backgroundGradient),
+    child: SafeArea(
+      bottom: !phone,
+      child: DefaultTextStyle.merge(
+        style: const TextStyle(color: AppColors.text),
+        child: child,
+      ),
+    ),
+  );
+
+  /// The pedal area: banner, the selected pedal, the chain and the status line.
+  Widget _boardColumn() => Column(
+    children: [
+      if (m.hint != null) Padding(padding: const EdgeInsets.fromLTRB(16, 16, 16, 0), child: _banner(m.hint!)),
+      if (m.fileSystemActive) const LinearProgressIndicator(color: AppColors.accent), // Effects owns the link
+      Expanded(child: m.patch == null ? _welcome() : _stage()),
+      if (m.patch != null) _chain(),
+      _statusLine(),
+    ],
+  );
+
+  Widget _desktopScaffold() => Scaffold(
+    body: _background(
+      Column(
+        children: [
+          wideBar ? _topBar() : _compactBar(),
+          const Divider(height: 1, color: AppColors.stroke),
+          Expanded(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                wideBar ? _topBar() : _compactBar(),
-                const Divider(height: 1, color: AppColors.stroke),
-                Expanded(
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Expanded(
-                        child: Column(
-                          children: [
-                            if (m.hint != null) Padding(padding: const EdgeInsets.fromLTRB(16, 16, 16, 0), child: _banner(m.hint!)),
-                            if (m.fileSystemActive) const LinearProgressIndicator(color: AppColors.accent), // Effects owns the link
-                            Expanded(child: m.patch == null ? _welcome() : _stage()),
-                            if (m.patch != null) _chain(),
-                            _statusLine(),
-                          ],
-                        ),
-                      ),
-                      if (wide && sidebar != null) ...[
-                        const VerticalDivider(width: 1, color: AppColors.stroke),
-                        SizedBox(
-                          width: sidebar == Sidebar.assistant ? 380 : 300,
-                          child: sidebar == Sidebar.assistant
-                              ? AssistantScreen(model: m, ai: widget.ai, onClose: () => setState(() => sidebar = null))
-                              : PatchesPanel(model: m, onClose: () => setState(() => sidebar = null)),
-                        ),
-                      ],
-                    ],
+                Expanded(child: _boardColumn()),
+                if (wide && sidebar != null) ...[
+                  const VerticalDivider(width: 1, color: AppColors.stroke),
+                  SizedBox(
+                    width: sidebar == Sidebar.assistant ? 380 : 300,
+                    child: sidebar == Sidebar.assistant
+                        ? AssistantScreen(model: m, ai: widget.ai, onClose: () => setState(() => sidebar = null))
+                        : PatchesPanel(model: m, onClose: () => setState(() => sidebar = null)),
                   ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+
+  /// Phones: everything one thumb-tap away. Tabs keep their state (IndexedStack).
+  Widget _phoneScaffold() => Scaffold(
+    backgroundColor: AppColors.background,
+    body: _background(
+      Column(
+        children: [
+          if (tab <= 1) ...[_compactBar(), const Divider(height: 1, color: AppColors.stroke)],
+          Expanded(
+            child: IndexedStack(
+              index: tab,
+              children: [
+                _boardColumn(),
+                ColoredBox(
+                  color: AppColors.panel,
+                  child: PatchList(model: m),
+                ),
+                AssistantScreen(model: m, ai: widget.ai),
+                _moreTab(),
+              ],
+            ),
+          ),
+        ],
+      ),
+    ),
+    bottomNavigationBar: NavigationBar(
+      selectedIndex: tab,
+      onDestinationSelected: (i) => setState(() => tab = i),
+      backgroundColor: AppColors.panel,
+      indicatorColor: AppColors.accent.withValues(alpha: 0.25),
+      height: 64,
+      destinations: const [
+        NavigationDestination(icon: Icon(Icons.dashboard_outlined), selectedIcon: Icon(Icons.dashboard), label: 'Board'),
+        NavigationDestination(icon: Icon(Icons.library_music_outlined), selectedIcon: Icon(Icons.library_music), label: 'Patches'),
+        NavigationDestination(icon: Icon(Icons.auto_awesome_outlined), selectedIcon: Icon(Icons.auto_awesome), label: 'AI'),
+        NavigationDestination(icon: Icon(Icons.more_horiz), label: 'More'),
+      ],
+    ),
+  );
+
+  /// Phones: what used to hide behind the ⋮ menu and the connection pill.
+  Widget _moreTab() {
+    final midi = widget.midi;
+    Widget header(String t) => Padding(
+      padding: const EdgeInsets.fromLTRB(16, 20, 16, 6),
+      child: Text(
+        t.toUpperCase(),
+        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, letterSpacing: 1.2, color: AppColors.dim),
+      ),
+    );
+    return Material(
+      color: AppColors.background, // a Material (not a ColoredBox) so list rows show their tap feedback
+      child: ListView(
+        children: [
+          header('Pedal'),
+          ListTile(
+            leading: const Icon(Icons.layers_outlined),
+            title: const Text('Effects'),
+            subtitle: const Text('Install and remove effects on the pedal'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: _openEffects,
+          ),
+          ListTile(
+            leading: const Icon(Icons.av_timer),
+            title: const Text('Tempo'),
+            trailing: Text(m.patch?.tempo == null ? '—' : '${m.patch!.tempo} BPM'),
+            enabled: m.patch != null,
+            onTap: _tempo,
+          ),
+          ListTile(leading: const Icon(Icons.edit_outlined), title: const Text('Rename patch'), enabled: m.patch != null, onTap: _rename),
+          header('MIDI controller'),
+          ListTile(
+            leading: const Icon(Icons.piano),
+            title: const Text('MIDI control'),
+            subtitle: const Text('Controllers, switches and Learn'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: _openMidi,
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            child: Row(
+              children: [
+                const Expanded(child: Text('Footswitch mode')),
+                SegmentedButton<ControlMode>(
+                  segments: const [
+                    ButtonSegment(value: ControlMode.stomp, label: Text('Stomp')),
+                    ButtonSegment(value: ControlMode.patch, label: Text('Patch')),
+                  ],
+                  selected: {midi.mode},
+                  onSelectionChanged: (v) => midi.setMode(v.first),
                 ),
               ],
             ),
           ),
-        ),
+          header('Connection'),
+          SwitchListTile.adaptive(
+            secondary: const Icon(Icons.graphic_eq),
+            title: const Text('Live updates'),
+            subtitle: const Text('Follow changes made on the pedal'),
+            value: m.liveUpdates,
+            onChanged: m.setLiveUpdates,
+          ),
+          SwitchListTile.adaptive(
+            secondary: const Icon(Icons.screenshot_monitor),
+            title: const Text("Show changed effect on the pedal's screen"),
+            value: m.showOnPedalScreen,
+            onChanged: m.setShowOnPedalScreen,
+          ),
+          if (m.isConnected) ...[
+            ListTile(leading: const Icon(Icons.sync), title: const Text('Reload from pedal'), onTap: m.resumeAfterFileSystem),
+            ListTile(leading: const Icon(Icons.link_off), title: const Text('Disconnect'), onTap: m.disconnect),
+          ] else
+            ListTile(
+              leading: const Icon(Icons.bluetooth_searching),
+              title: const Text('Pair a new pedal'),
+              onTap: () {
+                setState(() => tab = 0); // scan results appear on the board
+                m.scanForPedals();
+              },
+            ),
+          ListTile(
+            leading: const Icon(Icons.monitor_heart_outlined),
+            title: const Text('Diagnostics'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: _openDiagnostics,
+          ),
+          const SizedBox(height: 24),
+        ],
       ),
-    ),
-  );
+    );
+  }
 
   // Top bar
 
@@ -243,31 +431,48 @@ class _HomeScreenState extends State<HomeScreen> {
         _connectionPill(compact: true),
         const SizedBox(width: 8),
         Expanded(child: _patchSwitcher()),
+        if (phone && m.patch?.tempo != null)
+          InkWell(
+            onTap: _tempo,
+            borderRadius: BorderRadius.circular(12),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.av_timer, size: 15, color: AppColors.dim),
+                  const SizedBox(width: 3),
+                  Text('${m.patch!.tempo}', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
+                ],
+              ),
+            ),
+          ),
         IconButton(
           tooltip: m.editingEnabled ? 'Editing: tap to lock' : 'Locked: tap to unlock',
           onPressed: _toggleLock,
           icon: Icon(m.editingEnabled ? Icons.lock_open : Icons.lock, color: m.editingEnabled ? AppColors.accent : AppColors.text),
         ),
-        PopupMenuButton<String>(
-          tooltip: 'More',
-          onSelected: (v) => switch (v) {
-            'patches' => _toggle(Sidebar.patches),
-            'ai' => _toggle(Sidebar.assistant),
-            'effects' => _openEffects(),
-            'midi' => _openMidi(),
-            'mode' => widget.midi.setMode(widget.midi.mode == ControlMode.stomp ? ControlMode.patch : ControlMode.stomp),
-            'tempo' => _tempo(),
-            _ => null,
-          },
-          itemBuilder: (_) => [
-            _menuItem('patches', Icons.view_list, 'Patches'),
-            _menuItem('ai', Icons.auto_awesome, 'Tone Assistant'),
-            _menuItem('effects', Icons.layers_outlined, 'Effects'),
-            _menuItem('midi', Icons.piano, 'MIDI'),
-            _menuItem('mode', Icons.swap_horiz, 'Footswitch mode: ${widget.midi.mode == ControlMode.stomp ? 'Stomp' : 'Patch'}'),
-            if (m.patch?.tempo != null) _menuItem('tempo', Icons.av_timer, 'Tempo ${m.patch!.tempo} BPM'),
-          ],
-        ),
+        if (!phone)
+          PopupMenuButton<String>(
+            tooltip: 'More',
+            onSelected: (v) => switch (v) {
+              'patches' => _toggle(Sidebar.patches),
+              'ai' => _toggle(Sidebar.assistant),
+              'effects' => _openEffects(),
+              'midi' => _openMidi(),
+              'mode' => widget.midi.setMode(widget.midi.mode == ControlMode.stomp ? ControlMode.patch : ControlMode.stomp),
+              'tempo' => _tempo(),
+              _ => null,
+            },
+            itemBuilder: (_) => [
+              _menuItem('patches', Icons.view_list, 'Patches'),
+              _menuItem('ai', Icons.auto_awesome, 'Tone Assistant'),
+              _menuItem('effects', Icons.layers_outlined, 'Effects'),
+              _menuItem('midi', Icons.piano, 'MIDI'),
+              _menuItem('mode', Icons.swap_horiz, 'Footswitch mode: ${widget.midi.mode == ControlMode.stomp ? 'Stomp' : 'Patch'}'),
+              if (m.patch?.tempo != null) _menuItem('tempo', Icons.av_timer, 'Tempo ${m.patch!.tempo} BPM'),
+            ],
+          ),
       ],
     ),
   );
@@ -322,29 +527,31 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     final pill = Container(
-        padding: EdgeInsets.symmetric(horizontal: compact ? 10 : 12, vertical: compact ? 10 : 5),
-        decoration: const ShapeDecoration(color: AppColors.panelRaised, shape: StadiumBorder()),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Led(on: m.isConnected, color: m.isConnected ? Colors.green : Colors.grey, size: 9),
-            if (!compact) ...[
-              const SizedBox(width: 8),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(name, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-                  Text(status, style: const TextStyle(fontSize: 11, color: AppColors.dim)),
-                ],
-              ),
-            ],
+      padding: EdgeInsets.symmetric(horizontal: compact ? 10 : 12, vertical: compact ? 10 : 5),
+      decoration: const ShapeDecoration(color: AppColors.panelRaised, shape: StadiumBorder()),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Led(on: m.isConnected, color: m.isConnected ? Colors.green : Colors.grey, size: 9),
+          if (!compact) ...[
+            const SizedBox(width: 8),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(name, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                Text(status, style: const TextStyle(fontSize: 11, color: AppColors.dim)),
+              ],
+            ),
           ],
-        ),
-      );
+        ],
+      ),
+    );
     // On the Mac: a native NSMenu, as in the native app. Elsewhere: a Material popup with the same items.
     if (isMac) {
-      return Builder(builder: (c) => GestureDetector(onTap: () async => run(await NativeUI.menu(c, items)), child: pill));
+      return Builder(
+        builder: (c) => GestureDetector(onTap: () async => run(await NativeUI.menu(c, items)), child: pill),
+      );
     }
     return PopupMenuButton<String>(
       tooltip: 'Connection',
@@ -845,8 +1052,8 @@ class _HomeScreenState extends State<HomeScreen> {
             Text(
               m.device == null
                   ? canScan
-                      ? 'Scan for it below, or pair it in Bluetooth settings.'
-                      : "Pair it in this device's Bluetooth settings first (on the pedal: knob 1 → MENU → Bluetooth → pairing)."
+                        ? 'Scan for it below, or pair it in Bluetooth settings.'
+                        : "Pair it in this device's Bluetooth settings first (on the pedal: knob 1 → MENU → Bluetooth → pairing)."
                   : 'Turn the pedal on and keep it near this device.',
               textAlign: TextAlign.center,
               style: const TextStyle(color: AppColors.dim),
@@ -876,10 +1083,7 @@ class _HomeScreenState extends State<HomeScreen> {
               Pill(label: 'Refresh devices', active: true, onTap: m.refreshDevices)
             else
               Pill(label: 'Connect', active: true, onTap: m.connect),
-            if (canScan && m.bluetoothProblem == null && m.busy == null) ...[
-              const SizedBox(height: 22),
-              _scanSection(),
-            ],
+            if (canScan && m.bluetoothProblem == null && m.busy == null) ...[const SizedBox(height: 22), _scanSection()],
           ],
         ),
       ),
@@ -893,57 +1097,75 @@ class _HomeScreenState extends State<HomeScreen> {
     final (text, button) = switch (p) {
       BluetoothProblem.off => ('Bluetooth is off.', 'Turn on Bluetooth'),
       BluetoothProblem.permission => (
-          'MS-100BT Link needs the Nearby devices (Bluetooth) permission to find and talk to your pedal. '
-              'It is only used for the pedal.',
-          'Allow Bluetooth'
-        ),
-      BluetoothProblem.blocked => (
-          'Bluetooth permission is turned off for this app. Open Settings → Permissions → Nearby devices and choose Allow.',
-          'Open Settings'
-        ),
-    };
-    return Column(mainAxisSize: MainAxisSize.min, children: [
-      Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(color: AppColors.accent.withValues(alpha: 0.14), borderRadius: BorderRadius.circular(10)),
-        child: Row(children: [
-          const Icon(Icons.bluetooth_disabled, color: AppColors.accent),
-          const SizedBox(width: 10),
-          Expanded(child: Text(text)),
-        ]),
+        'MS-100BT Link needs the Nearby devices (Bluetooth) permission to find and talk to your pedal. '
+            'It is only used for the pedal.',
+        'Allow Bluetooth',
       ),
-      const SizedBox(height: 14),
-      Pill(label: button, active: true, onTap: m.fixBluetooth),
-    ]);
+      BluetoothProblem.blocked => (
+        'Bluetooth permission is turned off for this app. Open Settings → Permissions → Nearby devices and choose Allow.',
+        'Open Settings',
+      ),
+    };
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(color: AppColors.accent.withValues(alpha: 0.14), borderRadius: BorderRadius.circular(10)),
+          child: Row(
+            children: [
+              const Icon(Icons.bluetooth_disabled, color: AppColors.accent),
+              const SizedBox(width: 10),
+              Expanded(child: Text(text)),
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+        Pill(label: button, active: true, onTap: m.fixBluetooth),
+      ],
+    );
   }
 
-  Widget _scanSection() => Column(crossAxisAlignment: CrossAxisAlignment.stretch, mainAxisSize: MainAxisSize.min, children: [
-        Row(children: [
+  Widget _scanSection() => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      Row(
+        children: [
           const Expanded(
-            child: Text('New pedal? Put it in pairing mode (knob 1 → MENU → Bluetooth → PAIRING), then scan.',
-                style: TextStyle(color: AppColors.dim, fontSize: 13)),
+            child: Text(
+              'New pedal? Put it in pairing mode (knob 1 → MENU → Bluetooth → PAIRING), then scan.',
+              style: TextStyle(color: AppColors.dim, fontSize: 13),
+            ),
           ),
           const SizedBox(width: 10),
           m.scanning
               ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
               : Pill(icon: Icons.bluetooth_searching, label: 'Scan', onTap: m.scanForPedals),
-        ]),
-        for (final d in m.nearby)
-          Card(
-            color: AppColors.panelRaised,
-            child: ListTile(
-              leading: Icon(PairedDevice('', d.name).looksLikePedal ? Icons.music_note : Icons.bluetooth,
-                  color: PairedDevice('', d.name).looksLikePedal ? AppColors.accent : AppColors.dim),
-              title: Text(d.name),
-              subtitle: Text(d.address, style: const TextStyle(fontFamily: 'monospace', fontFamilyFallback: ['Menlo'], fontSize: 12)),
-              trailing: d.paired
-                  ? const Text('Paired', style: TextStyle(color: AppColors.dim))
-                  : m.pairing == d.address
-                      ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                      : TextButton(onPressed: m.pairing == null ? () => m.pairWith(d.address) : null, child: const Text('Pair')),
+        ],
+      ),
+      for (final d in m.nearby)
+        Card(
+          color: AppColors.panelRaised,
+          child: ListTile(
+            leading: Icon(
+              PairedDevice('', d.name).looksLikePedal ? Icons.music_note : Icons.bluetooth,
+              color: PairedDevice('', d.name).looksLikePedal ? AppColors.accent : AppColors.dim,
             ),
+            title: Text(d.name),
+            subtitle: Text(
+              d.address,
+              style: const TextStyle(fontFamily: 'monospace', fontFamilyFallback: ['Menlo'], fontSize: 12),
+            ),
+            trailing: d.paired
+                ? const Text('Paired', style: TextStyle(color: AppColors.dim))
+                : m.pairing == d.address
+                ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                : TextButton(onPressed: m.pairing == null ? () => m.pairWith(d.address) : null, child: const Text('Pair')),
           ),
-      ]);
+        ),
+    ],
+  );
 
   // Actions
 

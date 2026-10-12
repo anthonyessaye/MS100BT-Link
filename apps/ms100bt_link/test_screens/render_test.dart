@@ -236,4 +236,26 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
     await expectLater(find.byType(MidiScreen), matchesGoldenFile('out/android_bluetooth_midi.png'));
   });
+
+  // Phones: bottom tabs (Board, Patches, AI, More).
+  testWidgets('phone_tabs', (tester) async {
+    debugIsMac = false;
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final m = AppModel()..patch = PatchDump.decode(bourj);
+    for (var n = 0; n < 12; n++) {
+      m.slots[n] = PatchDump.decode(bourj)!;
+    }
+    final fx = EffectManager(m);
+    await tester.pumpWidget(app(HomeScreen(model: m, effects: fx, ai: AIAssistant(link: m, effects: fx), midi: MidiControl(link: m))));
+    await tester.pump(const Duration(milliseconds: 300));
+    for (final (i, label) in const [(0, 'Board'), (1, 'Patches'), (2, 'AI'), (3, 'More')]) {
+      await tester.tap(find.text(label).last);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 600)); // let the tab indicator finish moving
+      expect(tester.takeException(), isNull, reason: label);
+      await expectLater(find.byType(HomeScreen), matchesGoldenFile('out/phone_tab_$i.png'));
+    }
+  });
 }
