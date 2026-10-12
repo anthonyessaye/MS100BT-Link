@@ -28,8 +28,8 @@ make_bundle() { # name exec_name bundle_id extra_plist_keys
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>NSHumanReadableCopyright</key><string>© 2026 Anthony Essaye (anthonyessaye@outlook.com). MIT License.</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>0.1</string>
-  <key>CFBundleVersion</key><string>1</string>
+  <key>CFBundleShortVersionString</key><string>0.2</string>
+  <key>CFBundleVersion</key><string>2</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>NSBluetoothAlwaysUsageDescription</key>
   <string>Connects to the Zoom MS-100BT pedal over Bluetooth to read and edit its patches, and to Bluetooth MIDI controllers.</string>

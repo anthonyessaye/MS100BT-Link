@@ -55,9 +55,13 @@ Logs: `./logs/<command>-<timestamp>.jsonl` (CLI), `~/Library/Logs/MS100BTLink/` 
 Dark pedalboard UI (`MainView.swift`): the top bar has the connection, the patch switcher (◀ 03 BOURJ ▶),
 tempo, the Editing lock, MIDI, and the sidebar toggle. The selected effect is shown large with knobs
 (drag up/down, double-click for the default). The signal chain runs below (IN → 6 pedals → OUT; click a
-pedal to select it, click its footswitch to toggle it). The sidebar holds Patches (load, back up, save
-to a slot, import/export) and Effects (change the selected slot's effect). Connection details, SDP and
-the raw console are under Window → Diagnostics (⌥⌘D).
+pedal to select it, click its footswitch to toggle it). **Change effect** (⌘E) opens the effect library. The
+sidebar holds Patches (load, back up, save to a slot, import/export) or the Tone Assistant. Connection details,
+SDP and the raw console are under Window → Diagnostics (⌥⌘D).
+
+Screenshots: `"build/MS-100BT Link.app/Contents/MacOS/MS100BTLinkApp" --screenshots ../docs/media` (launch it via
+`open -W -n "build/MS-100BT Link.app" --args --screenshots "$PWD/../docs/media"`) renders the real views with demo
+data and touches neither Bluetooth nor any AI provider.
 
 ## MIDI control
 
@@ -66,3 +70,17 @@ Connect Bluetooth MIDI…), USB, or network. Assignments map CC, note or program
 **Learn**) to: toggle FX 1–6, next/previous patch, load patch n, or a knob (CC value scaled to the
 parameter's range). Program Change n can load patch n+1 directly. Assignments are saved in
 UserDefaults. MIDI actions are writes, so they need Editing unlocked.
+
+## Tone assistant (AI)
+
+Top bar → **AI**. Describe a sound ("Edge-style dotted-eighth delay") and the assistant proposes a patch.
+It works through typed tools (`list_effects`, `get_effect_details`, `get_current_patch`, `list_patches`,
+`propose_patch`, `adjust_patch`). It never sends bytes: `PatchAssistant` (ZoomCore) validates every effect
+name and knob value against the catalog, and the transport allowlist still applies. A proposal appears
+as a card; **Try on pedal** sends it to the edit buffer and reads it back. Saving to a slot stays manual.
+
+Providers (gear icon): Claude via the Messages API (default model `claude-opus-5-5`, adaptive thinking,
+effort `medium`, prompt caching, server-side refusal fallback `fallbacks: "default"`), ChatGPT, or any
+OpenAI-compatible endpoint (Ollama, OpenRouter, LM Studio). Keys are stored in the macOS Keychain.
+Messages and patch data go to the chosen provider.
+

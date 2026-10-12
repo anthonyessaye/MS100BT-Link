@@ -9,3 +9,7 @@ MS100BTLink/build/
 .swiftpm/
 .DS_Store
 *.xcuserstate
+
+# promo build output and renderer build products
+promo/out/
+promo/renderer/.build/

@@ -214,6 +214,20 @@ final class WriteTests: XCTestCase {
         XCTAssertNoThrow(try Allowlist.validate(Message.sendPatch(frame: bourj).bytes))
     }
 
+    func testEditSlot() throws {
+        let p = try XCTUnwrap(PatchDump.decode(bourj))
+        XCTAssertEqual(p.editSlot, 4) // FX5: the effect last toggled on the pedal before this dump
+        for slot in 0..<6 {
+            var e = PatchEdit(p)
+            e.setEditSlot(slot)
+            let d = try XCTUnwrap(e.decoded)
+            XCTAssertEqual(d.editSlot, slot)
+            XCTAssertEqual(d.tempo, p.tempo)
+            XCTAssertEqual(d.effectCount, p.effectCount)
+            XCTAssertEqual(d.effects.map(\.raw), p.effects.map(\.raw))
+        }
+    }
+
     func testEdits() throws {
         var e = PatchEdit(try XCTUnwrap(PatchDump.decode(bourj)))
         e.setName("Test 1")
@@ -280,5 +294,71 @@ final class WriteTests: XCTestCase {
                            [0xF0, 0x52, 0x00, 0x5E, 0x60, 0x06, 0xF7], [0xF0, 0x52, 0x00, 0x5E, 0x61, 0x05, 0xF7]] {
             XCTAssertThrowsError(try Allowlist.validate(f))
         }
+    }
+}
+
+final class PatchAssistantTests: XCTestCase {
+    let bourj = DecoderTests().bourj
+    var base: PatchDump { PatchDump.decode(bourj)! }
+    var available: Set<UInt32> { PatchAssistant.availableIDs(seen: [base]) }
+
+    func testBuildPatchFromSpec() throws {
+        let spec: [String: Any] = [
+            "name": "Edge Dly", "tempo": 126,
+            "effects": [
+                ["effect": "comp", "on": true, "params": ["Sense": 6]],
+                ["effect": "Delay", "on": true, "params": ["Time": 357, "F.B": "35", "Mix": 40, "Tail": "ON"]],
+                ["effect": "Hall", "on": false],
+            ],
+        ]
+        let edit = try PatchAssistant.buildPatch(spec: spec, base: base, available: available).get()
+        let d = try XCTUnwrap(edit.decoded)
+        XCTAssertEqual(d.name, "Edge Dly")
+        XCTAssertEqual(d.tempo, 126)
+        XCTAssertEqual(d.effects.map(\.displayName), ["Comp", "Delay", "Hall", "—", "—", "—"])
+        XCTAssertEqual(d.effects.map(\.isOn), [true, true, false, nil, nil, nil])
+        let delay = Dictionary(uniqueKeysWithValues: d.effects[1].parameters.map { ($0.name, $0.text) })
+        XCTAssertEqual(delay["Time"], "357")
+        XCTAssertEqual(delay["F.B"], "35")
+        XCTAssertEqual(delay["Tail"], "ON")
+        XCTAssertEqual(d.effectCount, 3)
+        XCTAssertNil(d.validationProblem)
+    }
+
+    func testBuildPatchReportsEveryProblem() {
+        let spec: [String: Any] = [
+            "name": "Way too long name",
+            "effects": [
+                ["effect": "Flux Capacitor"],
+                ["effect": "Hall", "params": ["Decay": 99, "Sparkle": 3]],
+            ],
+        ]
+        guard case .failure(let e) = PatchAssistant.buildPatch(spec: spec, base: base, available: available) else {
+            return XCTFail("expected failure")
+        }
+        XCTAssertEqual(e.problems.count, 4, e.description)
+        XCTAssertTrue(e.description.contains("Flux Capacitor"))
+        XCTAssertTrue(e.description.contains("\"99\" is not allowed"))
+        XCTAssertTrue(e.description.contains("Sparkle"))
+    }
+
+    func testAdjust() throws {
+        let edit = try PatchAssistant.adjust([["slot": 3, "param": "mix", "value": 20], ["slot": 1, "on": true]], base: base).get()
+        let d = try XCTUnwrap(edit.decoded)
+        XCTAssertEqual(d.effects[2].parameters.first { $0.name == "Mix" }?.text, "20")
+        XCTAssertEqual(d.effects[0].isOn, true)
+        XCTAssertEqual(d.effects[1].raw, base.effects[1].raw) // untouched
+        if case .success = PatchAssistant.adjust([["slot": 6, "param": "Mix", "value": 1]], base: base) { XCTFail("slot 6 is empty") }
+    }
+
+    func testDescriptions() {
+        let hall = PatchAssistant.effectDetails(names: ["hall"], available: available).first!
+        XCTAssertEqual(hall["name"] as? String, "Hall")
+        let knobs = hall["knobs"] as! [[String: Any]]
+        XCTAssertEqual(knobs.first?["values"] as? String, "1–30")
+        XCTAssertEqual(knobs.last?["values"] as? [String], ["OFF", "ON"])
+        XCTAssertEqual(PatchAssistant.describe(base)["name"] as? String, "Bourj")
+        XCTAssertFalse(PatchAssistant.effectList(available: available, category: "Reverb").isEmpty)
+        XCTAssertNotNil(PatchAssistant.effectDetails(names: ["nope"], available: available).first?["error"])
     }
 }

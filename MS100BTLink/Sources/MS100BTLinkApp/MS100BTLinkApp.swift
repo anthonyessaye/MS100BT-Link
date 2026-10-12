@@ -3,6 +3,12 @@ import SwiftUI
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // `MS100BTLinkApp --screenshots <dir>` renders README screenshots with demo data, then quits.
+        if let i = CommandLine.arguments.firstIndex(of: "--screenshots"), i + 1 < CommandLine.arguments.count {
+            Screenshots.render(to: URL(fileURLWithPath: CommandLine.arguments[i + 1]))
+            NSApp.terminate(nil)
+            return
+        }
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
     }
@@ -25,6 +31,7 @@ struct MS100BTLinkApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @StateObject private var model = LinkModel()
     @StateObject private var midi = MIDIControl()
+    @StateObject private var ai = AIAssistant()
 
     init() { Self.migrateSettings() }
 
@@ -45,9 +52,10 @@ struct MS100BTLinkApp: App {
             MainView()
                 .environmentObject(model)
                 .environmentObject(midi)
+                .environmentObject(ai)
                 .frame(minWidth: 1040, minHeight: 660)
                 .preferredColorScheme(.dark)
-                .onAppear { midi.model = model }
+                .onAppear { midi.model = model; ai.link = model }
         }
         .windowStyle(.hiddenTitleBar)
         .commands {

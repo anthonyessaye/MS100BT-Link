@@ -137,6 +137,9 @@ public struct PatchDump: Equatable, Sendable {
     /// Effect count from the header (can lag right after an on-pedal add/delete, per zoom-explorer).
     public let effectCount: Int?
     public let tempo: Int?
+    /// Effect slot (0…5) the pedal's own screen shows / edits. Header bits, per zoom-explorer:
+    /// byte 108 bits 6–7 and byte 109 bit 0 hold (5 − slot).
+    public let editSlot: Int?
 
     public var lengthMatchesMS50G: Bool { raw.count == Self.expectedLength }
 
@@ -191,14 +194,16 @@ public struct PatchDump: Equatable, Sendable {
             let on: Bool? = id == 0 ? nil : block.first.map { $0 & 1 == 1 }
             effects.append(EffectSlot(index: i, isOn: on, effectID: id, raw: block))
         }
-        var count: Int?, tempo: Int?
+        var count: Int?, tempo: Int?, edit: Int?
         if u.count >= 111 {
             let h = u[108..<111].map { Int($0) }
             count = (h[1] & 0b0001_1100) >> 2
             tempo = ((h[1] & 0b1110_0000) >> 5) + ((h[2] & 0b0001_1111) << 3)
+            let leftToRight = ((h[0] & 0b1100_0000) >> 6) | ((h[1] & 0b0000_0001) << 2)
+            edit = 5 - leftToRight
         }
         return PatchDump(deviceID: z.deviceID, raw: m, unpacked: u, name: name, effects: effects,
-                         effectCount: count, tempo: tempo)
+                         effectCount: count, tempo: tempo, editSlot: edit)
     }
 }
 

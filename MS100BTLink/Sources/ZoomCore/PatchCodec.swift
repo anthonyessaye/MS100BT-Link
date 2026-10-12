@@ -79,6 +79,13 @@ public struct PatchEdit: Equatable, Sendable {
         unpacked[110] = (unpacked[110] & 0xE0) | UInt8((t >> 3) & 0x1F)
     }
 
+    /// Which effect the pedal's screen shows (0…5).
+    public mutating func setEditSlot(_ slot: Int) {
+        let lr = 5 - min(max(slot, 0), 5)
+        unpacked[108] = (unpacked[108] & 0b0011_1111) | UInt8((lr & 0b011) << 6)
+        unpacked[109] = (unpacked[109] & 0b1111_1110) | UInt8((lr & 0b100) >> 2)
+    }
+
     public mutating func setOn(slot: Int, _ on: Bool) {
         var block = Array(unpacked[blockStart(slot)..<blockStart(slot) + PatchDump.effectBlockSize])
         PatchDump.setBits(&block, from: 0, width: 1, value: on ? 1 : 0)

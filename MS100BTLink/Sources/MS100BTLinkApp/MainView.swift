@@ -4,12 +4,18 @@ import ZoomCore
 struct MainView: View {
     @EnvironmentObject var model: LinkModel
     @EnvironmentObject var midi: MIDIControl
-    @State private var selectedSlot = 0
-    @State private var sidebar: Sidebar? = .patches
+    @State private var selectedSlot: Int
+    @State private var sidebar: Sidebar?
+
+    init(initialSlot: Int = 0, initialSidebar: Sidebar? = .patches) {
+        _selectedSlot = State(initialValue: initialSlot)
+        _sidebar = State(initialValue: initialSidebar)
+    }
     @State private var showMIDI = false
     @State private var showLibrary = false
+    @State private var lastPatchName: String?
 
-    enum Sidebar: String { case patches = "Patches" }
+    enum Sidebar: String { case patches = "Patches", assistant = "Assistant" }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -30,10 +36,14 @@ struct MainView: View {
                 }
                 if let side = sidebar {
                     Divider().overlay(Theme.stroke)
-                    SidebarView(close: { sidebar = nil })
-                        .id(side)
-                        .frame(width: 300)
-                        .transition(.move(edge: .trailing))
+                    Group {
+                        if side == .assistant {
+                            AssistantPanel(close: { sidebar = nil }).frame(width: 380)
+                        } else {
+                            SidebarView(close: { sidebar = nil }).frame(width: 300)
+                        }
+                    }
+                    .transition(.move(edge: .trailing))
                 }
             }
         }
@@ -44,6 +54,19 @@ struct MainView: View {
             EffectLibrarySheet(slot: selectedSlot).environmentObject(model)
         }
         .sheet(isPresented: $showMIDI) { MIDISettingsView().environmentObject(midi).environmentObject(model) }
+        // Follow the action: when exactly one pedal changes (on/off or effect type) from any
+        // source (click, MIDI footswitch, the pedal itself, the assistant), show it on the stage.
+        // Patch switches change several slots at once and leave the selection alone.
+        .onChange(of: model.patch?.effects.map { "\($0.effectID):\($0.isOn == true)" }) { old, new in
+            guard let old, let new, old.count == new.count, model.patch?.name == lastPatchName else {
+                lastPatchName = model.patch?.name
+                return
+            }
+            let changed = new.indices.filter { old[$0] != new[$0] }
+            if changed.count == 1, model.patch?.effects[changed[0]].isEmpty == false {
+                withAnimation(.easeOut(duration: 0.2)) { selectedSlot = changed[0] }
+            }
+        }
         .onChange(of: model.patch?.effects.map(\.effectID)) {
             if let fx = model.patch?.effects, selectedSlot < fx.count, fx[selectedSlot].isEmpty,
                let first = fx.firstIndex(where: { !$0.isEmpty }), !showLibrary {
@@ -82,9 +105,12 @@ struct TopBar: View {
             }
             .buttonStyle(PillButtonStyle(active: model.editingEnabled))
             .help(model.editingEnabled ? "Changes are sent to the pedal. Click to lock." : "Unlock to change the pedal from the Mac.")
+            Button { sidebar = sidebar == .assistant ? nil : .assistant } label: { Label("AI", systemImage: "sparkles") }
+                .buttonStyle(PillButtonStyle(active: sidebar == .assistant))
+                .help("Tone assistant: describe a sound, get a patch")
             MIDIModePill(showMIDI: $showMIDI)
-            Button { sidebar = sidebar == nil ? .patches : nil } label: { Image(systemName: "sidebar.right") }
-                .buttonStyle(PillButtonStyle(active: sidebar != nil))
+            Button { sidebar = sidebar == .patches ? nil : .patches } label: { Image(systemName: "sidebar.right") }
+                .buttonStyle(PillButtonStyle(active: sidebar == .patches))
                 .help("Patches & effects")
         }
         .padding(.horizontal, 16)
@@ -140,6 +166,7 @@ struct ConnectionPill: View {
         Menu {
             if model.isOpen {
                 Toggle("Live updates", isOn: Binding(get: { model.liveUpdates }, set: { v in Task { await model.setLiveUpdates(v) } }))
+                Toggle("Show changed effect on the pedal's screen", isOn: $model.showOnPedalScreen)
                 Button("Reload from pedal") { Task { await model.refresh() } }
                 Button("Disconnect") { model.disconnect() }
             } else {
@@ -185,6 +212,7 @@ struct PatchSwitcher: View {
                 HStack(spacing: 10) {
                     Text(model.currentSlot.map { String(format: "%02d", $0 + 1) } ?? "––")
                         .font(.system(size: 13, weight: .bold, design: .monospaced))
+                        .fixedSize()
                         .padding(.horizontal, 7).padding(.vertical, 3)
                         .background(Theme.accent, in: RoundedRectangle(cornerRadius: 5))
                         .foregroundStyle(.black)

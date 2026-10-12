@@ -51,6 +51,10 @@ final class LinkModel: ObservableObject {
     /// Patch slot 0…49 that is active on the pedal, when known (selected from here, or
     /// matched against the backup / slots read this session; the pedal never reports it).
     @Published var currentSlot: Int?
+    /// Move the MS-100BT's own display to an effect when it is switched on/off from here.
+    @Published var showOnPedalScreen = UserDefaults.standard.object(forKey: "showOnPedalScreen") as? Bool ?? true {
+        didSet { UserDefaults.standard.set(showOnPedalScreen, forKey: "showOnPedalScreen") }
+    }
     private var pollTimer: Timer?
     private var pendingEdits: [String: Task<Void, Never>] = [:]
     private var verifyTask: Task<Void, Never>?
@@ -67,7 +71,8 @@ final class LinkModel: ObservableObject {
         ticker = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.tick() }
         }
-        refreshDevices()
+        // Screenshot mode renders demo data only and must not touch Bluetooth (or wait on its prompt).
+        if !CommandLine.arguments.contains("--screenshots") { refreshDevices() }
     }
 
     var selectedDevice: IOBluetoothDevice? {
@@ -92,6 +97,7 @@ final class LinkModel: ObservableObject {
 
     private func tick() {
         now = Date()
+        guard !demoMode else { return }
         if isOpen, let d = selectedDevice, d.isConnected() {
             let r = Int(d.rawRSSI())
             rssi = r == 127 ? nil : r
@@ -247,7 +253,9 @@ final class LinkModel: ObservableObject {
 
     var canEdit: Bool { editingEnabled && canInteract }
     /// Controls are live whenever a patch is loaded; while locked, using one asks to unlock.
-    var canInteract: Bool { isOpen && patch != nil && session?.deviceID != nil }
+    var canInteract: Bool { demoMode || (isOpen && patch != nil && session?.deviceID != nil) }
+    /// Screenshot mode: controls render as live without a pedal (nothing is ever sent).
+    var demoMode = false
 
     private var unlockPromptOpen = false
 
@@ -307,9 +315,24 @@ final class LinkModel: ObservableObject {
         }
     }
 
+    /// The pedal only changes its display for a whole patch, so resend the current patch with
+    /// just the display field (header "edit slot") changed. Skipped when it already shows `slot`.
+    private func focusPedalScreen(_ slot: Int, _ s: PedalSession) async throws {
+        guard showOnPedalScreen, let cur = s.patch, cur.editSlot != slot, !cur.effects[slot].isEmpty else { return }
+        var e = PatchEdit(cur)
+        e.setEditSlot(slot)
+        try await s.sendPatch(e)
+    }
+
     func setOn(slot: Int, _ on: Bool) {
         guard requireUnlock(retry: { [weak self] in self?.setOn(slot: slot, on) }) else { return }
-        Task { await write("FX\(slot + 1) on/off") { s in try s.liveEdit(slot: slot, param: 0, value: on ? 1 : 0) }; scheduleVerify() }
+        Task {
+            await write("FX\(slot + 1) on/off") { s in
+                try s.liveEdit(slot: slot, param: 0, value: on ? 1 : 0) // instant sound change
+                try await self.focusPedalScreen(slot, s)
+            }
+            scheduleVerify()
+        }
     }
 
     /// Parameter change from a slider or picker; coalesced so a drag sends at most ~15 edits/s.
@@ -353,8 +376,22 @@ final class LinkModel: ObservableObject {
         guard requireUnlock(retry: { [weak self] in Task { await self?.setEffect(slot: slot, id: id) } }) else { return }
         guard var e = patch.map(PatchEdit.init) else { return }
         e.setEffect(slot: slot, id: id, on: patch?.effects[slot].isOn ?? true)
+        if showOnPedalScreen, id != 0 { e.setEditSlot(slot) }
         busy = "Sending patch…"; defer { busy = nil }
         await write("Change effect") { s in try await s.sendPatch(e) }
+    }
+
+    /// Sends a complete edited patch (e.g. an AI proposal) to the edit buffer and confirms it.
+    /// Asks to unlock first if needed. Returns true when the pedal reads back exactly this patch.
+    func applyEdit(_ e: PatchEdit, label: String) async -> Bool {
+        if !editingEnabled {
+            guard canInteract, confirmUnlock() else { hint = "Editing is locked."; return false }
+            editingEnabled = true
+        }
+        busy = "\(label)…"; defer { busy = nil }
+        hint = nil
+        await write(label) { s in try await s.sendPatch(e) }
+        return patch?.unpacked == e.decoded?.unpacked
     }
 
     func rename(_ name: String) async {

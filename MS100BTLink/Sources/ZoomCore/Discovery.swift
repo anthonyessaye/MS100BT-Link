@@ -29,6 +29,10 @@ public struct DeviceSummary: Sendable, Identifiable, Hashable {
     public let isPaired: Bool
     public let isConnected: Bool
     public var id: String { address }
+
+    public init(address: String, name: String, isPaired: Bool, isConnected: Bool) {
+        self.address = address; self.name = name; self.isPaired = isPaired; self.isConnected = isConnected
+    }
 }
 
 @MainActor
