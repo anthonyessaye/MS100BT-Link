@@ -1,12 +1,29 @@
 import 'package:flutter/material.dart';
 import 'package:zoom_core/zoom_core.dart';
 
+import '../ai_assistant.dart';
 import '../app_model.dart';
+import '../effect_manager.dart';
+import '../midi_control.dart';
+import 'assistant_screen.dart';
+import 'dialogs.dart' as dialogs;
+import 'effect_picker.dart';
+import 'effects_screen.dart';
+import 'midi_screen.dart';
+import 'patches_screen.dart';
 import 'widgets.dart';
 
+enum Sidebar { patches, assistant }
+
+/// Main window, laid out like the Mac app (MainView.swift): pill top bar, the selected pedal on the
+/// stage, the signal chain, a status line, and Patches / AI docked on the right. Phones get the same
+/// pieces in a compact bar, with Patches and AI as pages.
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key, required this.model});
+  const HomeScreen({super.key, required this.model, required this.effects, required this.ai, required this.midi});
   final AppModel model;
+  final EffectManager effects;
+  final AIAssistant ai;
+  final MidiControl midi;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -14,285 +31,505 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   AppModel get m => widget.model;
+  Sidebar? sidebar = Sidebar.patches;
+  List<String>? _lastChain;
+  String? _lastName;
+
+  /// Room to dock Patches / AI on the right.
+  bool get wide => MediaQuery.sizeOf(context).width >= 760;
+
+  /// Room for the full pill bar (about 1,100 px); narrower windows get the compact bar.
+  bool get wideBar => MediaQuery.sizeOf(context).width >= 1100;
 
   @override
   void initState() {
     super.initState();
     m.refreshDevices();
-  }
-
-  /// The same warning as the Mac app; edits only happen after the user agrees.
-  Future<bool> ensureUnlocked() async {
-    if (m.editingEnabled) return true;
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (c) => AlertDialog(
-        title: const Text('Unlock editing?'),
-        content: const Text('Changes you make here are sent to the pedal right away.\n\n'
-            '• If the pedal\'s Auto Save is on, they are saved into the patch immediately.\n'
-            '• If it\'s off, they last until you save or switch patches.\n\n'
-            'The app never touches the pedal\'s firmware.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('Unlock')),
-        ],
-      ),
-    );
-    if (ok == true) m.setEditing(true);
-    return ok == true;
+    m.addListener(_followAction);
+    widget.midi.requestUnlock = () async => mounted && await ensureUnlocked();
+    widget.midi.start();
   }
 
   @override
-  Widget build(BuildContext context) {
-    return ListenableBuilder(
-      listenable: m,
-      builder: (context, _) => Scaffold(
-        backgroundColor: AppColors.background,
-        appBar: _topBar(),
-        body: SafeArea(
-          child: Column(children: [
-            if (m.hint != null) _banner(m.hint!),
-            Expanded(child: m.patch == null ? _connect() : _board()),
-          ]),
-        ),
-      ),
-    );
+  void dispose() {
+    m.removeListener(_followAction);
+    super.dispose();
   }
 
-  PreferredSizeWidget _topBar() => AppBar(
-        backgroundColor: AppColors.panel,
-        titleSpacing: 12,
-        title: m.patch == null
-            ? const Text('MS-100BT Link', style: TextStyle(fontWeight: FontWeight.w800))
-            : Row(mainAxisSize: MainAxisSize.min, children: [
-                IconButton(icon: const Icon(Icons.chevron_left), onPressed: () async { if (await ensureUnlocked()) m.stepPatch(-1); }),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(color: AppColors.accent, borderRadius: BorderRadius.circular(5)),
-                  child: Text(m.currentSlot == null ? '––' : (m.currentSlot! + 1).toString().padLeft(2, '0'),
-                      style: const TextStyle(color: Colors.black, fontWeight: FontWeight.w900, fontFamily: 'monospace')),
-                ),
-                const SizedBox(width: 10),
-                Flexible(child: Text(m.patch!.name ?? '', overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 20))),
-                IconButton(icon: const Icon(Icons.chevron_right), onPressed: () async { if (await ensureUnlocked()) m.stepPatch(1); }),
-              ]),
-        actions: [
-          if (m.patch?.tempo != null)
-            Padding(padding: const EdgeInsets.only(right: 8),
-                child: Center(child: Text('${m.patch!.tempo} BPM', style: const TextStyle(color: AppColors.dim)))),
-          IconButton(
-            tooltip: m.editingEnabled ? 'Editing unlocked' : 'Locked',
-            icon: Icon(m.editingEnabled ? Icons.lock_open : Icons.lock, color: m.editingEnabled ? AppColors.accent : null),
-            onPressed: () async => m.editingEnabled ? m.setEditing(false) : await ensureUnlocked(),
+  /// Follow the action: when exactly one pedal changes (on/off or effect) from any source (tap, MIDI,
+  /// the pedal itself, the assistant), show it on the stage. Patch switches change several slots and
+  /// leave the selection alone. An empty selected slot moves to the first effect.
+  void _followAction() {
+    final p = m.patch;
+    final chain = p?.effects.map((e) => '${e.effectId}:${e.isOn == true}').toList();
+    final old = _lastChain;
+    if (p != null && chain != null && old != null && old.length == chain.length && p.name == _lastName) {
+      final changed = [for (var i = 0; i < chain.length; i++) if (old[i] != chain[i]) i];
+      if (changed.length == 1 && !p.effects[changed.first].isEmpty) m.selectedSlot = changed.first;
+    }
+    if (p != null && p.effects[m.selectedSlot.clamp(0, 5)].isEmpty) {
+      final first = p.effects.indexWhere((e) => !e.isEmpty);
+      if (first >= 0 && (old == null || p.name != _lastName)) m.selectedSlot = first;
+    }
+    _lastChain = chain;
+    _lastName = p?.name;
+  }
+
+  Future<bool> ensureUnlocked() => dialogs.ensureUnlocked(context, m);
+  void _push(Widget screen) => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => screen));
+  void _openEffects() => _push(EffectsScreen(model: m, mgr: widget.effects));
+  void _openMidi() => _push(MidiScreen(midi: widget.midi));
+
+  void _toggle(Sidebar s) {
+    if (!wide) {
+      _push(s == Sidebar.patches ? PatchesScreen(model: m) : AssistantScreen(model: m, ai: widget.ai));
+      return;
+    }
+    setState(() => sidebar = sidebar == s ? null : s);
+  }
+
+  @override
+  Widget build(BuildContext context) => ListenableBuilder(
+        listenable: Listenable.merge([m, widget.midi]),
+        builder: (context, _) => Scaffold(
+          body: DecoratedBox(
+            decoration: const BoxDecoration(gradient: AppColors.backgroundGradient),
+            child: SafeArea(
+              child: DefaultTextStyle.merge(
+                style: const TextStyle(color: AppColors.text),
+                child: Column(children: [
+                  wideBar ? _topBar() : _compactBar(),
+                  const Divider(height: 1, color: AppColors.stroke),
+                  Expanded(
+                    child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                      Expanded(
+                        child: Column(children: [
+                          if (m.hint != null) Padding(padding: const EdgeInsets.fromLTRB(16, 16, 16, 0), child: _banner(m.hint!)),
+                          if (m.fileSystemActive) const LinearProgressIndicator(color: AppColors.accent), // Effects owns the link
+                          Expanded(child: m.patch == null ? _welcome() : _stage()),
+                          if (m.patch != null) _chain(),
+                          _statusLine(),
+                        ]),
+                      ),
+                      if (wide && sidebar != null) ...[
+                        const VerticalDivider(width: 1, color: AppColors.stroke),
+                        SizedBox(
+                          width: sidebar == Sidebar.assistant ? 380 : 300,
+                          child: sidebar == Sidebar.assistant
+                              ? AssistantScreen(model: m, ai: widget.ai, onClose: () => setState(() => sidebar = null))
+                              : PatchesPanel(model: m, onClose: () => setState(() => sidebar = null)),
+                        ),
+                      ],
+                    ]),
+                  ),
+                ]),
+              ),
+            ),
           ),
-          if (m.isConnected)
-            IconButton(tooltip: 'Disconnect', icon: const Icon(Icons.link_off), onPressed: m.disconnect),
-        ],
+        ),
       );
 
-  Widget _banner(String text) => Container(
-        width: double.infinity,
-        margin: const EdgeInsets.all(12),
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(color: AppColors.accent.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(10)),
+  // Top bar
+
+  Widget _topBar() => Container(
+        height: 56,
+        color: AppColors.panel.withValues(alpha: 0.6),
+        padding: const EdgeInsets.symmetric(horizontal: 16),
         child: Row(children: [
-          const Icon(Icons.error_outline, color: AppColors.accent),
+          _connectionPill(),
+          const Spacer(),
+          _patchSwitcher(),
+          const Spacer(),
+          if (m.patch?.tempo != null) ...[
+            Pill(icon: Icons.av_timer, label: '${m.patch!.tempo}', tooltip: 'Patch tempo (BPM): click to change', onTap: _tempo),
+            const SizedBox(width: 10),
+          ],
+          _lockPill(),
           const SizedBox(width: 10),
-          Expanded(child: Text(text)),
-          IconButton(icon: const Icon(Icons.close, size: 18), onPressed: () { m.hint = null; m.refreshDevices(); }),
+          Pill(icon: Icons.layers_outlined, label: 'Effects', tooltip: 'Install and remove effects on the pedal', onTap: _openEffects),
+          const SizedBox(width: 10),
+          Pill(icon: Icons.auto_awesome, label: 'AI', active: sidebar == Sidebar.assistant,
+              tooltip: 'Tone assistant: describe a sound, get a patch', onTap: () => _toggle(Sidebar.assistant)),
+          const SizedBox(width: 10),
+          _midiPill(),
+          const SizedBox(width: 10),
+          Pill(icon: Icons.view_sidebar_outlined, active: sidebar == Sidebar.patches, tooltip: 'Patches', onTap: () => _toggle(Sidebar.patches)),
         ]),
       );
 
-  // MARK: connect
+  Widget _compactBar() => Container(
+        color: AppColors.panel.withValues(alpha: 0.6),
+        padding: const EdgeInsets.fromLTRB(10, 8, 4, 8),
+        child: Row(children: [
+          _connectionPill(compact: true),
+          const SizedBox(width: 8),
+          Expanded(child: _patchSwitcher()),
+          IconButton(
+            tooltip: m.editingEnabled ? 'Editing: tap to lock' : 'Locked: tap to unlock',
+            onPressed: _toggleLock,
+            icon: Icon(m.editingEnabled ? Icons.lock_open : Icons.lock, color: m.editingEnabled ? AppColors.accent : AppColors.text),
+          ),
+          PopupMenuButton<String>(
+            tooltip: 'More',
+            onSelected: (v) => switch (v) {
+              'patches' => _toggle(Sidebar.patches),
+              'ai' => _toggle(Sidebar.assistant),
+              'effects' => _openEffects(),
+              'midi' => _openMidi(),
+              'mode' => widget.midi.setMode(widget.midi.mode == ControlMode.stomp ? ControlMode.patch : ControlMode.stomp),
+              'tempo' => _tempo(),
+              _ => null,
+            },
+            itemBuilder: (_) => [
+              _menuItem('patches', Icons.view_list, 'Patches'),
+              _menuItem('ai', Icons.auto_awesome, 'Tone Assistant'),
+              _menuItem('effects', Icons.layers_outlined, 'Effects'),
+              _menuItem('midi', Icons.piano, 'MIDI'),
+              _menuItem('mode', Icons.swap_horiz, 'Footswitch mode: ${widget.midi.mode == ControlMode.stomp ? 'Stomp' : 'Patch'}'),
+              if (m.patch?.tempo != null) _menuItem('tempo', Icons.av_timer, 'Tempo ${m.patch!.tempo} BPM'),
+            ],
+          ),
+        ]),
+      );
 
-  Widget _connect() {
-    final pedals = m.devices;
-    return Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 460),
-        child: ListView(padding: const EdgeInsets.all(24), shrinkWrap: true, children: [
-          const Icon(Icons.bluetooth_audio, size: 56, color: AppColors.accent),
-          const SizedBox(height: 16),
-          const Text('Connect your MS-100BT', textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 26, fontWeight: FontWeight.w800)),
-          const SizedBox(height: 8),
-          const Text('Pair it once in your device\'s Bluetooth settings (on the pedal: knob 1 → MENU → Bluetooth → PAIRING), then connect here.',
-              textAlign: TextAlign.center, style: TextStyle(color: AppColors.dim)),
-          const SizedBox(height: 20),
-          if (pedals.isEmpty) const Text('No paired devices found.', textAlign: TextAlign.center),
-          for (final d in pedals)
-            Card(
-              color: AppColors.panelRaised,
-              child: ListTile(
-                selected: m.device?.address == d.address,
-                selectedTileColor: AppColors.accent.withValues(alpha: 0.12),
-                onTap: () { m.device = d; setState(() {}); },
-                leading: Icon(m.device?.address == d.address ? Icons.radio_button_checked : Icons.radio_button_off,
-                    color: m.device?.address == d.address ? AppColors.accent : AppColors.dim),
-                title: Text(d.name),
-                subtitle: Text(d.address, style: const TextStyle(fontFamily: 'monospace', fontSize: 12)),
-                trailing: d.looksLikePedal ? const Icon(Icons.music_note, color: AppColors.accent) : null,
-              ),
-            ),
-          const SizedBox(height: 16),
-          if (m.busy != null)
-            Center(child: Column(children: [const CircularProgressIndicator(), const SizedBox(height: 8), Text(m.busy!)]))
-          else
-            FilledButton.icon(
-              style: FilledButton.styleFrom(backgroundColor: AppColors.accent, foregroundColor: Colors.black,
-                  padding: const EdgeInsets.symmetric(vertical: 16)),
-              onPressed: m.device == null ? null : m.connect,
-              icon: const Icon(Icons.link),
-              label: const Text('Connect', style: TextStyle(fontWeight: FontWeight.w800)),
-            ),
-          TextButton.icon(onPressed: m.refreshDevices, icon: const Icon(Icons.refresh), label: const Text('Refresh devices')),
-          if (m.diagnostics.isNotEmpty) ...[
-            const Divider(height: 32),
-            Text('Platform notes', style: Theme.of(context).textTheme.titleSmall),
-            for (final e in m.diagnostics.entries)
-              Text('${e.key}: ${e.value}', style: const TextStyle(fontFamily: 'monospace', fontSize: 12, color: AppColors.dim)),
+  PopupMenuItem<String> _menuItem(String v, IconData icon, String text) =>
+      PopupMenuItem(value: v, child: Row(children: [Icon(icon, size: 18), const SizedBox(width: 12), Text(text)]));
+
+  Widget _connectionPill({bool compact = false}) {
+    final name = m.device?.name ?? 'No pedal';
+    final status = m.busy ?? (m.isConnected ? 'Connected · live' : (m.device == null ? 'Pair your pedal' : 'Tap to connect'));
+    return PopupMenuButton<String>(
+      tooltip: 'Connection',
+      onSelected: (v) async {
+        switch (v) {
+          case 'connect':
+            await m.connect();
+          case 'disconnect':
+            await m.disconnect();
+          case 'reload':
+            await m.resumeAfterFileSystem();
+          case 'screen':
+            m.setShowOnPedalScreen(!m.showOnPedalScreen);
+          case 'refresh':
+            await m.refreshDevices();
+          case 'notes':
+            _platformNotes();
+          default:
+            if (v.startsWith('dev:')) m.device = m.devices.firstWhere((d) => d.address == v.substring(4));
+            setState(() {});
+        }
+      },
+      itemBuilder: (_) => [
+        if (m.isConnected) ...[
+          CheckedPopupMenuItem(value: 'screen', checked: m.showOnPedalScreen, child: const Text("Show changed effect on the pedal's screen")),
+          const PopupMenuItem(value: 'reload', child: Text('Reload from pedal')),
+          const PopupMenuItem(value: 'disconnect', child: Text('Disconnect')),
+        ] else ...[
+          const PopupMenuItem(value: 'connect', child: Text('Connect')),
+          for (final d in m.devices)
+            CheckedPopupMenuItem(value: 'dev:${d.address}', checked: m.device?.address == d.address, child: Text(d.name)),
+          const PopupMenuItem(value: 'refresh', child: Text('Refresh paired devices')),
+        ],
+        const PopupMenuDivider(),
+        const PopupMenuItem(value: 'notes', child: Text('Diagnostics…')),
+      ],
+      child: Container(
+        padding: EdgeInsets.symmetric(horizontal: compact ? 10 : 12, vertical: compact ? 10 : 5),
+        decoration: const ShapeDecoration(color: AppColors.panelRaised, shape: StadiumBorder()),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Led(on: m.isConnected, color: m.isConnected ? Colors.green : Colors.grey, size: 9),
+          if (!compact) ...[
+            const SizedBox(width: 8),
+            Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+              Text(name, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+              Text(status, style: const TextStyle(fontSize: 11, color: AppColors.dim)),
+            ]),
           ],
         ]),
       ),
     );
   }
 
-  // MARK: pedalboard
-
-  Widget _board() {
-    final p = m.patch!;
-    final slot = m.selectedSlot.clamp(0, 5);
-    return LayoutBuilder(builder: (context, c) {
-      final wide = c.maxWidth > 720;
-      final stage = _bigPedal(p.effects[slot], wide ? 380 : (c.maxWidth - 48).clamp(260, 380).toDouble());
-      return Column(children: [
-        Expanded(child: SingleChildScrollView(padding: const EdgeInsets.all(20), child: Center(child: stage))),
-        _chain(p, wide),
-      ]);
-    });
+  Widget _patchSwitcher() {
+    final slotText = m.currentSlot == null ? '––' : (m.currentSlot! + 1).toString().padLeft(2, '0');
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: const ShapeDecoration(color: Color(0x59000000), shape: StadiumBorder()),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        IconButton(
+          visualDensity: VisualDensity.compact,
+          onPressed: m.canInteract ? () async { if (await ensureUnlocked()) await m.stepPatch(-1); } : null,
+          icon: const Icon(Icons.chevron_left),
+        ),
+        Flexible(
+          child: InkWell(
+            onTap: () => _toggle(Sidebar.patches),
+            onLongPress: _rename,
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                decoration: BoxDecoration(color: AppColors.accent, borderRadius: BorderRadius.circular(5)),
+                child: Text(slotText, style: const TextStyle(fontFamily: 'Menlo', fontWeight: FontWeight.w700, fontSize: 13, color: Colors.black)),
+              ),
+              const SizedBox(width: 10),
+              Flexible(
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(minWidth: wideBar ? 140 : 0),
+                  child: Text(m.patch?.name ?? 'Not connected', overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
+                ),
+              ),
+            ]),
+          ),
+        ),
+        IconButton(
+          visualDensity: VisualDensity.compact,
+          onPressed: m.canInteract ? () async { if (await ensureUnlocked()) await m.stepPatch(1); } : null,
+          icon: const Icon(Icons.chevron_right),
+        ),
+      ]),
+    );
   }
 
-  Widget _bigPedal(EffectSlot fx, double width) {
-    if (fx.isEmpty) {
-      return Column(children: [
-        const SizedBox(height: 40),
-        const Icon(Icons.add_circle_outline, size: 48, color: AppColors.dim),
-        Text('Slot ${fx.index + 1} is empty', style: const TextStyle(fontSize: 18, color: AppColors.dim)),
-        const SizedBox(height: 12),
-        FilledButton(onPressed: () => _pickEffect(fx.index), child: const Text('Choose an effect')),
-      ]);
-    }
-    final def = EffectCatalog.effect(fx.effectId);
+  Future<void> _toggleLock() async => m.editingEnabled ? m.setEditing(false) : await ensureUnlocked();
+
+  Widget _lockPill() => Pill(
+        icon: m.editingEnabled ? Icons.lock_open : Icons.lock,
+        label: m.editingEnabled ? 'Editing' : 'Locked',
+        active: m.editingEnabled,
+        tooltip: m.editingEnabled ? 'Changes are sent to the pedal. Click to lock.' : 'Unlock to change the pedal from this device.',
+        onTap: _toggleLock,
+      );
+
+  /// MIDI button with the footswitch mode; tap the mode to flip Stomp/Patch.
+  Widget _midiPill() {
+    final stomp = widget.midi.mode == ControlMode.stomp;
+    return Pill(
+      icon: Icons.piano,
+      label: 'MIDI',
+      onTap: _openMidi,
+      tooltip: 'MIDI controller settings',
+      trailing: Tooltip(
+        message: 'Footswitch mode: Stomp toggles effects, Patch loads patches. Tap to switch.',
+        child: GestureDetector(
+          onTap: () => widget.midi.setMode(stomp ? ControlMode.patch : ControlMode.stomp),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: ShapeDecoration(color: stomp ? const Color(0xFF4D4D4D) : AppColors.accent, shape: const StadiumBorder()),
+            child: Text(stomp ? 'STOMP' : 'PATCH',
+                style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 0.8, color: stomp ? AppColors.text : Colors.black)),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // Stage
+
+  Widget _stage() {
+    final fx = m.patch!.effects[m.selectedSlot.clamp(0, 5)];
+    return Center(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(24),
+        child: fx.isEmpty
+            ? Column(mainAxisSize: MainAxisSize.min, children: [
+                const Icon(Icons.add_circle_outline, size: 44, color: AppColors.dim),
+                const SizedBox(height: 14),
+                Text('Slot ${fx.index + 1} is empty', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w600, color: AppColors.dim)),
+                const SizedBox(height: 14),
+                Pill(label: 'Choose an effect', active: true, onTap: m.canInteract ? () => _pickEffect(fx.index) : null),
+              ])
+            : Column(mainAxisSize: MainAxisSize.min, children: [
+                _bigPedal(fx),
+                const SizedBox(height: 16),
+                Row(mainAxisSize: MainAxisSize.min, children: [
+                  _stageButton(Icons.swap_horiz, 'Change effect', true, () => _pickEffect(fx.index)),
+                  const SizedBox(width: 10),
+                  _stageButton(Icons.delete_outline, 'Remove', false, () async {
+                    if (await ensureUnlocked()) await m.setEffect(fx.index, 0);
+                  }),
+                ]),
+              ]),
+      ),
+    );
+  }
+
+  Widget _stageButton(IconData icon, String label, bool primary, VoidCallback onTap) => Material(
+        color: primary ? AppColors.accent : AppColors.panelRaised,
+        shape: const StadiumBorder(),
+        child: InkWell(
+          customBorder: const StadiumBorder(),
+          onTap: m.canInteract ? onTap : null,
+          child: Padding(
+            padding: EdgeInsets.symmetric(horizontal: primary ? 18 : 14, vertical: 10),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              Icon(icon, size: 16, color: primary ? Colors.black : AppColors.text),
+              const SizedBox(width: 6),
+              Text(label, style: TextStyle(fontSize: primary ? 14 : 13, fontWeight: primary ? FontWeight.w700 : FontWeight.w600,
+                  color: primary ? Colors.black : AppColors.text)),
+            ]),
+          ),
+        ),
+      );
+
+  Widget _bigPedal(EffectSlot fx) {
     final on = fx.isOn == true;
-    return Column(children: [
-      ColorFiltered(
-        colorFilter: on ? const ColorFilter.mode(Colors.transparent, BlendMode.dst) : _grey,
+    final def = EffectCatalog.effect(fx.effectId);
+    final params = fx.parameters;
+    final width = wide ? 380.0 : (MediaQuery.sizeOf(context).width - 48).clamp(260.0, 380.0);
+    return AnimatedOpacity(
+      duration: const Duration(milliseconds: 250),
+      opacity: 1,
+      child: ColorFiltered(
+        colorFilter: saturation(on ? 1 : 0.2, brightness: on ? 0 : -0.06),
         child: SizedBox(
           width: width,
           child: PedalBody(
             color: AppColors.category(fx.category),
             radius: 22,
             child: Padding(
-              padding: const EdgeInsets.all(22),
+              padding: const EdgeInsets.all(28),
               child: Column(mainAxisSize: MainAxisSize.min, children: [
                 Row(children: [
                   Led(on: on, size: 14),
                   const Spacer(),
                   Text((fx.category ?? '').toUpperCase(),
-                      style: const TextStyle(fontWeight: FontWeight.w900, letterSpacing: 2, fontSize: 11, color: Colors.white70)),
+                      style: const TextStyle(fontWeight: FontWeight.w900, letterSpacing: 2, fontSize: 11, color: Color(0xBFFFFFFF))),
                 ]),
-                const SizedBox(height: 16),
+                const SizedBox(height: 18),
                 Container(
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(color: Colors.black26, borderRadius: BorderRadius.circular(12)),
-                  child: Wrap(alignment: WrapAlignment.center, spacing: 6, runSpacing: 14, children: [
-                    for (final v in fx.parameters)
-                      Knob(
-                        label: v.name, display: v.text, raw: v.raw,
-                        count: def?.parameters[v.index].valueCount ?? 0,
-                        defaultRaw: def?.parameters[v.index].defaultRaw ?? 0,
-                        enabled: m.canInteract,
-                        onChanged: (r) async { if (await ensureUnlocked()) m.setParameter(fx.index, v.index, r); },
-                      ),
-                  ]),
+                  padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 12),
+                  decoration: BoxDecoration(color: const Color(0x4D000000), borderRadius: BorderRadius.circular(12)),
+                  child: LayoutBuilder(builder: (context, c) {
+                    final cols = params.length.clamp(1, 3);
+                    final cell = c.maxWidth / cols;
+                    return Wrap(runSpacing: 18, children: [
+                      for (final p in params)
+                        SizedBox(width: cell, child: Center(child: _control(fx, p, def?.parameters.elementAtOrNull(p.index)))),
+                    ]);
+                  }),
                 ),
-                const SizedBox(height: 14),
-                Text(fx.displayName, style: const TextStyle(fontSize: 30, fontWeight: FontWeight.w900, color: Colors.white)),
-                const SizedBox(height: 12),
-                Footswitch(onTap: () async { if (await ensureUnlocked()) m.setOn(fx.index, !on); }),
+                const SizedBox(height: 18),
+                Text(fx.displayName,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontSize: 30, fontWeight: FontWeight.w900, color: Colors.white,
+                        shadows: [Shadow(color: Color(0x66000000), blurRadius: 2, offset: Offset(0, 1))])),
+                const SizedBox(height: 18),
+                Footswitch(size: 54, onTap: m.canInteract ? () async { if (await ensureUnlocked()) await m.setOn(fx.index, !on); } : null),
               ]),
             ),
           ),
         ),
       ),
-      const SizedBox(height: 14),
-      FilledButton.icon(
-        style: FilledButton.styleFrom(backgroundColor: AppColors.accent, foregroundColor: Colors.black),
-        onPressed: () => _pickEffect(fx.index),
-        icon: const Icon(Icons.swap_horiz),
-        label: const Text('Change effect', style: TextStyle(fontWeight: FontWeight.w800)),
-      ),
-    ]);
+    );
   }
 
-  static const _grey = ColorFilter.matrix(<double>[
-    0.30, 0.55, 0.15, 0, -10, 0.30, 0.55, 0.15, 0, -10, 0.30, 0.55, 0.15, 0, -10, 0, 0, 0, 1, 0,
-  ]);
+  Widget _control(EffectSlot fx, ParameterValue p, CatalogParameter? def) {
+    Future<void> set(int r) async {
+      if (await ensureUnlocked()) m.setParameter(fx.index, p.index, r);
+    }
 
-  Widget _chain(PatchDump p, bool wide) => Container(
-        color: Colors.black38,
-        padding: const EdgeInsets.fromLTRB(12, 30, 12, 14),
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
+    final count = def?.valueCount ?? 0;
+    if (def != null && count == 2) {
+      return MiniSwitch(label: p.name, options: [def.display(0) ?? '0', def.display(1) ?? '1'], raw: p.raw,
+          enabled: m.canInteract, onChanged: set);
+    }
+    return Knob(
+      label: p.name, display: p.text, raw: p.raw, count: count, defaultRaw: def?.defaultRaw ?? 0, size: 62,
+      enabled: m.canInteract && def != null, // custom effects: value ranges unknown, shown only
+      onChanged: set,
+    );
+  }
+
+  // Chain
+
+  Widget _chain() {
+    final p = m.patch!;
+    return Container(
+      color: const Color(0x59000000),
+      padding: const EdgeInsets.fromLTRB(20, 34, 20, 16),
+      child: LayoutBuilder(builder: (context, c) {
+        const pedalW = 104.0, jackW = 22.0; // 92 + selection border and padding
+        final minW = jackW * 2 + 6 * pedalW + 7 * 10;
+        final row = SizedBox(
+          width: c.maxWidth > minW ? c.maxWidth : minW,
           child: Stack(alignment: Alignment.center, children: [
-            Positioned(left: 0, right: 0, top: 50,
-                child: Container(height: 6, decoration: BoxDecoration(color: const Color(0xFF3A3A3A), borderRadius: BorderRadius.circular(3)))),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 30),
+              child: Transform.translate(
+                offset: const Offset(0, -11), // level with the jacks
+                child: Container(
+                  height: 6,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(3),
+                    gradient: const LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter,
+                        colors: [Color(0xFF4D4D4D), Color(0xFF1F1F1F)]),
+                  ),
+                ),
+              ),
+            ),
             Row(children: [
               const _Jack('IN'),
-              for (final fx in p.effects) ...[const SizedBox(width: 14), _miniPedal(fx)],
-              const SizedBox(width: 14),
+              for (final fx in p.effects) ...[const Spacer(), _miniPedal(fx)],
+              const Spacer(),
               const _Jack('OUT'),
             ]),
           ]),
-        ),
-      );
+        );
+        return c.maxWidth >= minW ? row : SingleChildScrollView(scrollDirection: Axis.horizontal, clipBehavior: Clip.none, child: row);
+      }),
+    );
+  }
 
   Widget _miniPedal(EffectSlot fx) {
     final off = !fx.isEmpty && fx.isOn != true;
     final selected = fx.index == m.selectedSlot;
-    return GestureDetector(
-      onTap: () { setState(() => m.selectedSlot = fx.index); if (fx.isEmpty) _pickEffect(fx.index); },
-      child: AnimatedSlide(
-        duration: const Duration(milliseconds: 250),
-        curve: Curves.easeOutBack,
-        offset: Offset(0, off ? -0.18 : 0), // lifted off the cable: bypassed
-        child: Container(
-          padding: const EdgeInsets.all(3),
-          decoration: BoxDecoration(borderRadius: BorderRadius.circular(13),
-              border: Border.all(color: selected ? Colors.white : Colors.transparent, width: 2)),
-          child: ColorFiltered(
-            colorFilter: off ? _grey : const ColorFilter.mode(Colors.transparent, BlendMode.dst),
-            child: SizedBox(
-              width: 86,
-              height: 112,
-              child: PedalBody(
-                color: AppColors.category(fx.category),
-                radius: 10,
-                empty: fx.isEmpty,
-                child: fx.isEmpty
-                    ? const Center(child: Icon(Icons.add, color: AppColors.dim))
-                    : Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
-                        child: Column(children: [
-                          Led(on: fx.isOn == true, size: 8),
-                          const SizedBox(height: 6),
-                          Text(fx.displayName, textAlign: TextAlign.center, maxLines: 2,
-                              style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 12, color: Colors.white)),
-                          const Spacer(),
-                          Footswitch(size: 26, onTap: () async { if (await ensureUnlocked()) m.setOn(fx.index, fx.isOn != true); }),
-                        ]),
-                      ),
+    return Tooltip(
+      message: fx.isEmpty ? 'Empty slot ${fx.index + 1}' : '${fx.displayName} · slot ${fx.index + 1}',
+      waitDuration: const Duration(milliseconds: 600),
+      child: GestureDetector(
+        onTap: () {
+          setState(() => m.selectedSlot = fx.index);
+          if (fx.isEmpty && m.canInteract) _pickEffect(fx.index);
+        },
+        child: TweenAnimationBuilder<double>(
+          tween: Tween(end: off ? 1 : 0),
+          duration: const Duration(milliseconds: 350),
+          curve: Curves.easeOutBack,
+          builder: (context, t, child) => Transform.translate(
+            offset: Offset(0, -22 * t), // lifted off the cable: signal bypasses it
+            child: Transform.scale(scale: 1 - 0.06 * t, child: Opacity(opacity: 1 - 0.2 * t, child: child)),
+          ),
+          child: Container(
+            padding: const EdgeInsets.all(4),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: selected ? Colors.white : Colors.transparent, width: 2),
+              boxShadow: off ? const [BoxShadow(color: Color(0x80000000), blurRadius: 10, offset: Offset(0, 14))] : null,
+            ),
+            child: ColorFiltered(
+              colorFilter: saturation(off ? 0.12 : 1, brightness: off ? -0.08 : 0),
+              child: SizedBox(
+                width: 92,
+                height: 118,
+                child: PedalBody(
+                  color: AppColors.category(fx.category),
+                  radius: 10,
+                  empty: fx.isEmpty,
+                  child: fx.isEmpty
+                      ? const Center(child: Icon(Icons.add, color: AppColors.dim))
+                      : Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+                          child: Column(children: [
+                            Led(on: fx.isOn == true, size: 8),
+                            const SizedBox(height: 6),
+                            Text(fx.displayName, textAlign: TextAlign.center, maxLines: 2, overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 12, color: Colors.white)),
+                            const Spacer(),
+                            Footswitch(size: 26, onTap: m.canInteract ? () async { if (await ensureUnlocked()) await m.setOn(fx.index, fx.isOn != true); } : null),
+                          ]),
+                        ),
+                ),
               ),
             ),
           ),
@@ -301,43 +538,126 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Future<void> _pickEffect(int slot) async {
-    if (!await ensureUnlocked()) return;
-    if (!mounted) return;
-    final available = PatchAssistant.availableIds([if (m.patch != null) m.patch!]);
-    final byCat = <String, List<(int, String)>>{};
-    for (final id in available.toList()..sort()) {
-      final n = EffectCatalog.name(id);
-      if (n != null) (byCat[EffectCatalog.category(id) ?? 'Other'] ??= []).add((id, n));
-    }
-    final picked = await showModalBottomSheet<int>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: AppColors.panel,
-      builder: (c) => DraggableScrollableSheet(
-        expand: false,
-        initialChildSize: 0.8,
-        builder: (c, scroll) => ListView(controller: scroll, padding: const EdgeInsets.all(16), children: [
-          Text('Effects for slot ${slot + 1}', style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800)),
-          for (final cat in byCat.keys) ...[
-            Padding(padding: const EdgeInsets.only(top: 16, bottom: 6),
-                child: Text(cat.toUpperCase(), style: TextStyle(color: AppColors.category(cat), fontWeight: FontWeight.w900, letterSpacing: 1.2))),
-            Wrap(spacing: 8, runSpacing: 8, children: [
-              for (final (id, name) in byCat[cat]!)
-                ActionChip(
-                  backgroundColor: AppColors.category(cat).withValues(alpha: 0.8),
-                  label: Text(name, style: const TextStyle(fontWeight: FontWeight.w700, color: Colors.white)),
-                  onPressed: () => Navigator.pop(c, id),
-                ),
-            ]),
+  // Status line, banner, welcome
+
+  Widget _statusLine() {
+    final midi = widget.midi;
+    return Container(
+      color: AppColors.panel.withValues(alpha: 0.6),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      child: DefaultTextStyle.merge(
+        style: const TextStyle(fontSize: 11, color: AppColors.dim),
+        child: Row(children: [
+          if (m.isConnected) ...[
+            Icon(Icons.graphic_eq, size: 13, color: AppColors.dim),
+            const SizedBox(width: 4),
+            Text(m.liveUpdates ? 'Live' : 'Manual refresh'),
+            const SizedBox(width: 14),
+            Flexible(
+              child: Text(m.editingEnabled ? 'Edits play right away; use Save to keep them' : 'Locked: using a control asks to unlock',
+                  overflow: TextOverflow.ellipsis),
+            ),
           ],
-          if (m.patch != null && !m.patch!.effects[slot].isEmpty) ...[
-            const SizedBox(height: 20),
-            TextButton.icon(onPressed: () => Navigator.pop(c, 0), icon: const Icon(Icons.delete_outline), label: Text('Remove effect from slot ${slot + 1}')),
+          const Spacer(),
+          if (midi.lastMessage != null) ...[
+            const Icon(Icons.piano, size: 13, color: AppColors.dim),
+            const SizedBox(width: 4),
+            Text(midi.lastMessage!),
           ],
+          if (midi.status != null) ...[const SizedBox(width: 10), Flexible(child: Text(midi.status!, overflow: TextOverflow.ellipsis, style: const TextStyle(color: AppColors.accent)))],
         ]),
       ),
     );
+  }
+
+  Widget _banner(String text) => Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(color: AppColors.accent.withValues(alpha: 0.14), borderRadius: BorderRadius.circular(10)),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          const Icon(Icons.error, color: AppColors.accent, size: 18),
+          const SizedBox(width: 10),
+          Expanded(child: Text(text)),
+          InkWell(onTap: () { m.hint = null; m.refreshDevices(); }, child: const Icon(Icons.close, size: 16, color: AppColors.dim)),
+        ]),
+      );
+
+  Widget _welcome() => Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 460),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              const Icon(Icons.wifi_tethering, size: 48, color: AppColors.accent),
+              const SizedBox(height: 18),
+              Text(m.device == null ? 'Pair your MS-100BT' : 'Connect your MS-100BT',
+                  textAlign: TextAlign.center, style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w700)),
+              const SizedBox(height: 18),
+              Text(
+                m.device == null
+                    ? "Pair it in this device's Bluetooth settings first (on the pedal: knob 1 → MENU → Bluetooth → pairing)."
+                    : 'Turn the pedal on and keep it near this device.',
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: AppColors.dim),
+              ),
+              if (m.devices.length > 1) ...[
+                const SizedBox(height: 14),
+                DropdownButton<String>(
+                  value: m.device?.address,
+                  dropdownColor: AppColors.panelRaised,
+                  items: [for (final d in m.devices) DropdownMenuItem(value: d.address, child: Text(d.name))],
+                  onChanged: (a) => setState(() => m.device = m.devices.firstWhere((d) => d.address == a)),
+                ),
+              ],
+              const SizedBox(height: 18),
+              if (m.busy != null)
+                Row(mainAxisSize: MainAxisSize.min, children: [
+                  const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2)),
+                  const SizedBox(width: 8),
+                  Text(m.busy!, style: const TextStyle(fontSize: 13)),
+                ])
+              else if (m.device == null)
+                Pill(label: 'Refresh devices', active: true, onTap: m.refreshDevices)
+              else
+                Pill(label: 'Connect', active: true, onTap: m.connect),
+            ]),
+          ),
+        ),
+      );
+
+  void _platformNotes() => showDialog<void>(
+        context: context,
+        builder: (c) => AlertDialog(
+          title: const Text('Diagnostics'),
+          content: SingleChildScrollView(
+            child: SelectableText(
+              m.diagnostics.isEmpty ? 'No platform notes.' : m.diagnostics.entries.map((e) => '${e.key}: ${e.value}').join('\n'),
+              style: const TextStyle(fontFamily: 'Menlo', fontSize: 12),
+            ),
+          ),
+          actions: [TextButton(onPressed: () => Navigator.pop(c), child: const Text('Close'))],
+        ),
+      );
+
+  // Actions
+
+  Future<void> _rename() async {
+    final p = m.patch;
+    if (p == null || !await ensureUnlocked() || !mounted) return;
+    final name = await dialogs.askText(context, 'Patch name (up to 10 characters)', initial: p.name?.trim() ?? '');
+    if (name != null && name.trim().isNotEmpty) await m.rename(name.trim());
+  }
+
+  Future<void> _tempo() async {
+    final p = m.patch;
+    if (p == null || !await ensureUnlocked() || !mounted) return;
+    final t = await dialogs.askText(context, 'Tempo (40–250 BPM)', initial: '${p.tempo ?? 120}', keyboard: TextInputType.number);
+    final bpm = int.tryParse(t ?? '');
+    if (bpm != null) await m.setTempo(bpm);
+  }
+
+  Future<void> _pickEffect(int slot) async {
+    if (!await ensureUnlocked() || !mounted) return;
+    final picked = await EffectPicker.show(context, m, slot);
     if (picked != null) await m.setEffect(slot, picked);
   }
 }
@@ -346,9 +666,9 @@ class _Jack extends StatelessWidget {
   const _Jack(this.label);
   final String label;
   @override
-  Widget build(BuildContext context) => Column(children: [
+  Widget build(BuildContext context) => Column(mainAxisSize: MainAxisSize.min, children: [
         Container(width: 22, height: 22, decoration: const BoxDecoration(shape: BoxShape.circle, color: Color(0xFF404040)),
-            child: Center(child: Container(width: 10, height: 10, decoration: const BoxDecoration(shape: BoxShape.circle, color: Colors.black)))),
+            child: Center(child: Container(width: 12, height: 12, decoration: const BoxDecoration(shape: BoxShape.circle, color: Colors.black)))),
         const SizedBox(height: 4),
         Text(label, style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w900, color: AppColors.dim)),
       ]);

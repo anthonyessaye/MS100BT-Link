@@ -140,6 +140,47 @@ abstract final class PatchAssistant {
     return edit;
   }
 
+  /// Tweaks knob values or on/off of `base`. Slots are 1–6.
+  static PatchEdit adjust(List<Object?> changes, PatchDump base) {
+    final problems = <String>[];
+    final edit = PatchEdit(base);
+    for (final raw in changes) {
+      final c = raw is Map ? raw.cast<String, Object?>() : const <String, Object?>{};
+      final slotNo = _number(c['slot']);
+      if (slotNo == null || slotNo < 1 || slotNo > 6) {
+        problems.add('each change needs "slot" 1–6');
+        continue;
+      }
+      final fx = base.effects[slotNo - 1];
+      final def = fx.isEmpty ? null : EffectCatalog.effect(fx.effectId);
+      if (def == null) {
+        problems.add('slot $slotNo is empty; use propose_patch to add effects');
+        continue;
+      }
+      final on = c['on'];
+      if (on is bool) edit.setOn(slotNo - 1, on);
+      final key = c['param'];
+      if (key is String) {
+        final idx = def.parameters.indexWhere((p) => p.name.toLowerCase() == key.toLowerCase());
+        if (idx < 0) {
+          problems.add('slot $slotNo ${def.name}: no knob named "$key"');
+          continue;
+        }
+        try {
+          edit.setParameter(slotNo - 1, idx, rawFor(c['value'], def.parameters[idx]));
+        } on SpecError catch (e) {
+          problems.add('slot $slotNo ${def.name} $key: ${e.problems.first}');
+        }
+      }
+    }
+    if (problems.isEmpty) {
+      final problem = edit.decoded?.validationProblem;
+      if (problem != null) problems.add(problem);
+    }
+    if (problems.isNotEmpty) throw SpecError(problems);
+    return edit;
+  }
+
   static int rawFor(Object? value, CatalogParameter p) {
     final String wanted = switch (value) {
       final bool b => b ? 'ON' : 'OFF',

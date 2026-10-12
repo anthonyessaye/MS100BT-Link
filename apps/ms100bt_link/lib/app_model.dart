@@ -1,12 +1,25 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:zoom_core/zoom_core.dart';
 
 import 'bluetooth.dart';
+import 'storage.dart';
 
-/// App state: connection, current patch, editing lock, live updates. Mirrors the Mac app's LinkModel.
+/// App state: connection, current patch, editing lock, live updates, patch backups. Mirrors the Mac app's LinkModel.
 class AppModel extends ChangeNotifier {
+  AppModel({this.prefs}) {
+    editingEnabled = prefs?.getBool('editingUnlocked') ?? false;
+    showOnPedalScreen = prefs?.getBool('showOnPedalScreen') ?? true;
+    PatchLibrary.latest().then((l) {
+      library = l;
+      notifyListeners();
+    }).catchError((_) {});
+  }
+
+  final SharedPreferences? prefs;
+
   List<PairedDevice> devices = [];
   PairedDevice? device;
   PedalSession? session;
@@ -15,9 +28,21 @@ class AppModel extends ChangeNotifier {
   int selectedSlot = 0;
   bool editingEnabled = false;
   bool liveUpdates = true;
+
+  /// Turning an effect on/off also moves the pedal's own display to it.
+  bool showOnPedalScreen = true;
   String? busy;
   String? hint;
+  String? notice;
   Map<String, Object?> diagnostics = {};
+
+  /// Latest patch backup and patches read this session (slot → patch).
+  PatchLibrary? library;
+  final Map<int, PatchDump> slots = {};
+  int? backupProgress;
+
+  /// A file-system session (Effects) owns the link: live updates and edits pause.
+  bool fileSystemActive = false;
 
   Timer? _poll;
   StreamSubscription<PedalSession>? _changes;
@@ -25,7 +50,7 @@ class AppModel extends ChangeNotifier {
   Timer? _verify;
 
   bool get isConnected => session?.identity != null;
-  bool get canInteract => isConnected && patch != null;
+  bool get canInteract => isConnected && patch != null && !fileSystemActive;
 
   Future<void> refreshDevices() async {
     try {
@@ -53,7 +78,7 @@ class AppModel extends ChangeNotifier {
       final s = PedalSession(bridge)..writesEnabled = editingEnabled;
       session = s;
       _changes = s.changes.listen((_) {
-        if (_pendingEdits.isEmpty) patch = s.patch;
+        if (_pendingEdits.isEmpty && !fileSystemActive) patch = s.patch;
         notifyListeners();
       });
       final id = await s.identify();
@@ -61,6 +86,7 @@ class AppModel extends ChangeNotifier {
       busy = 'Reading the patch…';
       notifyListeners();
       patch = await s.readPatch();
+      currentSlot = inferSlot();
       if (liveUpdates) await _startLive();
     } catch (e) {
       hint = 'Could not connect: $e';
@@ -88,31 +114,71 @@ class AppModel extends ChangeNotifier {
     await s.enterEditMode();
     _poll?.cancel();
     _poll = Timer.periodic(const Duration(seconds: 2), (_) async {
-      if (busy != null || _pendingEdits.isNotEmpty || _verify != null || session == null) return;
+      if (busy != null || fileSystemActive || _pendingEdits.isNotEmpty || _verify != null || session == null) return;
       final p = await session!.readPatch(timeout: const Duration(milliseconds: 1500));
-      if (p != null) {
+      if (p != null && !fileSystemActive) {
         patch = p;
         notifyListeners();
       }
     });
   }
 
-  void setEditing(bool on) {
-    editingEnabled = on;
-    session?.writesEnabled = on;
+  /// Hands the link to a file-system session (Effects): polling stops; the engine leaves edit mode itself.
+  void pauseForFileSystem() {
+    _poll?.cancel();
+    _verify?.cancel();
+    _verify = null;
+    fileSystemActive = true;
     notifyListeners();
   }
 
-  Future<void> _write(String label, Future<void> Function(PedalSession s) action) async {
+  Future<void> resumeAfterFileSystem() async {
+    fileSystemActive = false;
     final s = session;
-    if (s == null || !editingEnabled) return;
+    if (s != null) {
+      patch = await s.readPatch() ?? patch;
+      if (liveUpdates) await _startLive();
+    }
+    notifyListeners();
+  }
+
+  void setEditing(bool on) {
+    editingEnabled = on;
+    session?.writesEnabled = on;
+    prefs?.setBool('editingUnlocked', on); // remembered between launches, as on the Mac
+    notifyListeners();
+  }
+
+  void setShowOnPedalScreen(bool on) {
+    showOnPedalScreen = on;
+    prefs?.setBool('showOnPedalScreen', on);
+    notifyListeners();
+  }
+
+  Future<bool> _write(String label, Future<void> Function(PedalSession s) action) async {
+    final s = session;
+    if (s == null || !editingEnabled || fileSystemActive) return false;
     try {
       await action(s);
       patch = s.patch;
+      return true;
     } catch (e) {
       hint = '$label failed: $e';
+      return false;
+    } finally {
+      notifyListeners();
     }
+  }
+
+  Future<void> _busy(String label, Future<void> Function() body) async {
+    busy = label;
     notifyListeners();
+    try {
+      await body();
+    } finally {
+      busy = null;
+      notifyListeners();
+    }
   }
 
   /// On/off; also moves the pedal's own display to this effect (as on the Mac).
@@ -121,7 +187,7 @@ class AppModel extends ChangeNotifier {
     await _write('FX${slot + 1} on/off', (s) async {
       await s.liveEdit(slot, 0, on ? 1 : 0);
       final cur = s.patch;
-      if (cur != null && cur.editSlot != slot && !cur.effects[slot].isEmpty) {
+      if (showOnPedalScreen && cur != null && cur.editSlot != slot && !cur.effects[slot].isEmpty) {
         await s.sendPatch(PatchEdit(cur)..setEditSlot(slot));
       }
     });
@@ -131,7 +197,7 @@ class AppModel extends ChangeNotifier {
   /// Knob change, coalesced so a drag sends at most ~15 edits per second.
   void setParameter(int slot, int index, int raw) {
     final p = patch;
-    if (p == null || !editingEnabled) return;
+    if (p == null || !editingEnabled || fileSystemActive) return;
     patch = (PatchEdit(p)..setParameter(slot, index, raw)).decoded ?? p;
     notifyListeners();
     final key = '$slot.$index';
@@ -150,7 +216,7 @@ class AppModel extends ChangeNotifier {
     _verify = Timer(const Duration(milliseconds: 700), () async {
       _verify = null;
       final s = session;
-      if (s == null || expected == null || _pendingEdits.isNotEmpty) return;
+      if (s == null || expected == null || _pendingEdits.isNotEmpty || fileSystemActive) return;
       final back = await s.readPatch(timeout: const Duration(seconds: 2));
       if (back == null) return;
       patch = back;
@@ -161,29 +227,109 @@ class AppModel extends ChangeNotifier {
     });
   }
 
-  Future<void> selectPatch(int n) async {
-    busy = 'Loading patch ${n + 1}…';
-    notifyListeners();
-    await _write('Select patch', (s) async {
-      await s.selectPatch(n);
-      currentSlot = n;
-    });
-    busy = null;
-    notifyListeners();
-  }
+  Future<void> selectPatch(int n) => _busy('Loading patch ${n + 1}…', () async {
+        await _write('Select patch', (s) async {
+          final p = await s.selectPatch(n);
+          if (p != null) slots[n] = p;
+          currentSlot = n;
+        });
+      });
 
-  Future<void> stepPatch(int delta) => selectPatch(((currentSlot ?? 0) + delta + 50) % 50);
+  Future<void> stepPatch(int delta) =>
+      selectPatch(((currentSlot ?? inferSlot() ?? 0) + delta + Allowlist.patchSlots) % Allowlist.patchSlots);
+
+  /// Best guess of the active slot by comparing the current patch with known slots.
+  int? inferSlot() {
+    final p = patch;
+    if (p == null) return null;
+    final known = {...?library?.patches, ...slots};
+    final exact = known.entries.where((e) => listEquals(e.value.unpacked, p.unpacked)).firstOrNull;
+    if (exact != null) return exact.key;
+    final byName = known.entries.where((e) => e.value.name == p.name).toList();
+    return byName.length == 1 ? byName.first.key : null;
+  }
 
   Future<void> setEffect(int slot, int id) async {
     final p = patch;
     if (p == null) return;
     final e = PatchEdit(p)..setEffect(slot, id, on: p.effects[slot].isOn ?? true);
     if (id != 0) e.setEditSlot(slot);
-    busy = 'Sending patch…';
+    await _busy('Sending patch…', () => _write('Change effect', (s) => s.sendPatch(e)));
+  }
+
+  /// Sends a complete edited patch (e.g. an AI proposal or a .syx file) and confirms it by reading it back.
+  Future<bool> applyEdit(PatchEdit e, String label) async {
+    hint = null;
+    var ok = false;
+    await _busy('$label…', () async => ok = await _write(label, (s) => s.sendPatch(e)));
+    return ok && listEquals(patch?.unpacked, e.decoded?.unpacked);
+  }
+
+  Future<void> rename(String name) async {
+    final p = patch;
+    if (p != null) await applyEdit(PatchEdit(p)..setName(name), 'Rename');
+  }
+
+  Future<void> setTempo(int bpm) async {
+    final p = patch;
+    if (p != null) await applyEdit(PatchEdit(p)..setTempo(bpm), 'Set tempo');
+  }
+
+  /// Reads all 50 patches into a new backup folder (the pedal steps through every patch).
+  Future<void> backupAll() async {
+    final s = session;
+    if (s == null || !editingEnabled) return;
+    backupProgress = 0;
     notifyListeners();
-    await _write('Change effect', (s) => s.sendPatch(e));
-    busy = null;
+    final start = currentSlot ?? inferSlot();
+    await _write('Backup', (s) async {
+      final all = await s.readAllPatches(progress: (n, p) {
+        backupProgress = n + 1;
+        if (p != null) slots[n] = p;
+        notifyListeners();
+      });
+      library = await PatchLibrary.save(all);
+      currentSlot = start ?? inferSlot();
+      notice = 'Backed up ${all.length} patches.';
+      if (all.length < Allowlist.patchSlots) hint = 'Only ${all.length} of 50 patches were read; the backup is incomplete.';
+    });
+    backupProgress = null;
     notifyListeners();
+  }
+
+  /// Stores the active patch into `slot`. The caller confirms; a backup holding that slot is required.
+  Future<void> store(int slot) async {
+    if (library?.patches[slot] == null) {
+      hint = 'Back up all patches first: storing overwrites patch ${slot + 1}.';
+      notifyListeners();
+      return;
+    }
+    await _busy('Storing…', () => _write('Store', (s) async {
+          await s.storePatch(slot);
+          final p = s.patch;
+          if (p != null) slots[slot] = p;
+          currentSlot = slot;
+          notice = 'Stored "${p?.name ?? '?'}" into patch ${slot + 1}.';
+        }));
+  }
+
+  /// Loads a .syx patch into the edit buffer (not stored until the user stores it).
+  Future<void> importPatch(List<int> bytes) async {
+    final file = PatchDump.decode(bytes);
+    final id = session?.deviceId;
+    if (file == null || id == null) {
+      hint = 'Not a valid MS-100BT patch file.';
+      notifyListeners();
+      return;
+    }
+    final problem = file.validationProblem;
+    if (problem != null) {
+      hint = 'Patch file refused: $problem';
+      notifyListeners();
+      return;
+    }
+    final framed = file.deviceId == id ? file : PatchDump.decode([0xF0, 0x52, 0x00, id, ...file.raw.sublist(4)])!;
+    await applyEdit(PatchEdit(framed), 'Load patch file');
   }
 
   bool _disposed = false;

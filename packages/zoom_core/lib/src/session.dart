@@ -212,6 +212,25 @@ class PedalSession {
     return readPatch();
   }
 
+  /// Steps through all 50 patches (needs [writesEnabled]: it selects patches) and returns to the one
+  /// that was active, matched by content, then by name.
+  Future<Map<int, PatchDump>> readAllPatches({void Function(int, PatchDump?)? progress}) async {
+    if (!writesEnabled) throw WriteLocked('patch select for backup');
+    final original = patch;
+    final out = <int, PatchDump>{};
+    for (var n = 0; n < Allowlist.patchSlots; n++) {
+      final p = await selectPatch(n);
+      if (p != null) out[n] = p;
+      progress?.call(n, p);
+    }
+    if (original != null) {
+      final back = out.entries.where((e) => _eq(e.value.unpacked, original.unpacked)).firstOrNull?.key ??
+          out.entries.where((e) => e.value.name == original.name).firstOrNull?.key;
+      if (back != null) await selectPatch(back);
+    }
+    return out;
+  }
+
   Future<void> storePatch(int slot) async {
     final id = deviceId;
     if (id == null) throw PedalError('No device ID yet (identify first).');

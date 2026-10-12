@@ -51,4 +51,14 @@ void main() {
     expect(PatchAssistant.describe(base)['name'], 'Bourj');
     expect(PatchAssistant.effectList(available, category: 'Reverb'), isNotEmpty);
   });
+
+  test('adjust tweaks knobs and on/off, and reports bad changes', () {
+    final e = PatchAssistant.adjust([
+      {'slot': 1, 'on': true},
+      {'slot': 2, 'param': base.effects[1].parameters.first.name, 'value': base.effects[1].parameters.first.text},
+    ], base);
+    expect(e.decoded!.effects[0].isOn, isTrue);
+    expect(() => PatchAssistant.adjust([{'slot': 9}], base), throwsA(isA<SpecError>()));
+    expect(() => PatchAssistant.adjust([{'slot': 1, 'param': 'Nope', 'value': 1}], base), throwsA(isA<SpecError>()));
+  });
 }

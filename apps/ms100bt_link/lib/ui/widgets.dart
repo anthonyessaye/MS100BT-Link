@@ -8,7 +8,13 @@ abstract final class AppColors {
   static const panel = Color(0xFF242426);
   static const panelRaised = Color(0xFF2E2E30);
   static const accent = Color(0xFFFF8C26);
-  static const dim = Color(0x8CFFFFFF);
+  static const dim = Color(0x80FFFFFF);
+  static const text = Color(0xEBFFFFFF);
+  static const stroke = Color(0x14FFFFFF);
+
+  /// Window background: the Mac app's top-to-bottom gradient.
+  static const backgroundGradient = LinearGradient(
+      begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Color(0xFF131313), Color(0xFF1F1F1F)]);
 
   static Color category(String? c) => switch (c) {
         'Dynamics' => const Color(0xFF2EB3B3),
@@ -67,13 +73,23 @@ class PedalBody extends StatelessWidget {
         gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter,
             colors: [color.withValues(alpha: 0.95), color.withValues(alpha: 0.55)]),
         border: Border.all(color: Colors.white.withValues(alpha: 0.25), width: 1.2),
-        boxShadow: const [BoxShadow(color: Colors.black54, blurRadius: 12, offset: Offset(0, 8))],
+        boxShadow: const [BoxShadow(color: Color(0x8C000000), blurRadius: 12, offset: Offset(0, 8))],
       ),
-      child: Stack(children: [
+      // The content sizes the enclosure (and fills it when the size is fixed); panel and screws are drawn behind.
+      child: Stack(fit: StackFit.passthrough, children: [
+        Positioned.fill(
+          child: Padding(
+            padding: const EdgeInsets.all(8),
+            child: DecoratedBox(
+                decoration: BoxDecoration(color: const Color(0x38000000), borderRadius: BorderRadius.circular(math.max(radius - 6, 2)))),
+          ),
+        ),
         for (final a in const [Alignment.topLeft, Alignment.topRight, Alignment.bottomLeft, Alignment.bottomRight])
-          Align(alignment: a, child: Padding(padding: const EdgeInsets.all(7),
-              child: Container(width: 5, height: 5, decoration: const BoxDecoration(shape: BoxShape.circle, color: Color(0xFFBFBFBF))))),
-        Positioned.fill(child: child),
+          Positioned.fill(
+            child: Align(alignment: a, child: Padding(padding: const EdgeInsets.all(7.5),
+                child: Container(width: 5, height: 5, decoration: const BoxDecoration(shape: BoxShape.circle, color: Color(0xFFBFBFBF))))),
+          ),
+        child,
       ]),
     );
   }
@@ -171,4 +187,96 @@ class _KnobPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_KnobPainter old) => old.frac != frac;
+}
+
+
+/// Capsule button from the Mac top bar (PillButtonStyle): accent when active, raised grey otherwise.
+class Pill extends StatelessWidget {
+  const Pill({super.key, this.icon, this.label, this.active = false, this.onTap, this.tooltip, this.trailing});
+  final IconData? icon;
+  final String? label;
+  final bool active;
+  final VoidCallback? onTap;
+  final String? tooltip;
+  final Widget? trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    final fg = active ? Colors.black : AppColors.text;
+    final pill = Material(
+      color: active ? AppColors.accent : AppColors.panelRaised,
+      shape: const StadiumBorder(),
+      child: InkWell(
+        customBorder: const StadiumBorder(),
+        onTap: onTap,
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(12, 7, trailing == null ? 12 : 6, 7),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            if (icon != null) Icon(icon, size: 15, color: fg),
+            if (icon != null && label != null) const SizedBox(width: 6),
+            if (label != null) Text(label!, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: fg)),
+            if (trailing != null) ...[const SizedBox(width: 8), trailing!],
+          ]),
+        ),
+      ),
+    );
+    return tooltip == null ? pill : Tooltip(message: tooltip!, child: pill);
+  }
+}
+
+/// Two-position switch for on/off style knobs (MiniSwitch in Controls.swift).
+class MiniSwitch extends StatelessWidget {
+  const MiniSwitch({super.key, required this.label, required this.options, required this.raw, required this.onChanged, this.enabled = true});
+  final String label;
+  final List<String> options;
+  final int raw;
+  final ValueChanged<int> onChanged;
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+        width: 88,
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          SizedBox(
+            height: 64,
+            child: Center(
+              child: Opacity(
+                opacity: enabled ? 1 : 0.55,
+                child: Container(
+                  padding: const EdgeInsets.all(3),
+                  decoration: BoxDecoration(color: const Color(0x59000000), borderRadius: BorderRadius.circular(7)),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    for (var i = 0; i < options.length; i++)
+                      GestureDetector(
+                        onTap: enabled && i != raw ? () => onChanged(i) : null,
+                        child: Container(
+                          constraints: const BoxConstraints(minWidth: 34),
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                          decoration: BoxDecoration(color: i == raw ? AppColors.accent : Colors.transparent, borderRadius: BorderRadius.circular(5)),
+                          child: Text(options[i], textAlign: TextAlign.center,
+                              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: i == raw ? Colors.black : AppColors.dim)),
+                        ),
+                      ),
+                  ]),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(label.toUpperCase(), maxLines: 1, overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 0.8, color: AppColors.dim)),
+        ]),
+      );
+}
+
+/// Saturation/brightness filter used for bypassed pedals (SwiftUI .saturation/.brightness).
+ColorFilter saturation(double s, {double brightness = 0}) {
+  const r = 0.2126, g = 0.7152, b = 0.0722;
+  final o = brightness * 255;
+  return ColorFilter.matrix(<double>[
+    r * (1 - s) + s, g * (1 - s), b * (1 - s), 0, o,
+    r * (1 - s), g * (1 - s) + s, b * (1 - s), 0, o,
+    r * (1 - s), g * (1 - s), b * (1 - s) + s, 0, o,
+    0, 0, 0, 1, 0,
+  ]);
 }
