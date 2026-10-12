@@ -784,7 +784,7 @@ packages:
       path: "../../packages/zoom_core"
       relative: true
     source: path
-    version: "0.1.0"
+    version: "1.0.0"
 sdks:
   dart: ">=3.13.5 <4.0.0"
   flutter: ">=3.47.0"
