@@ -367,4 +367,47 @@ void main() {
     expect(after.effects[0].parameters.map((p) => p.name), ['Time', 'Grain', 'Mix']);
     expect(after.validationProblem, isNull, reason: "known from the pedal's own file: may be edited and re-sent");
   });
+
+  group('installed custom effects', () {
+    tearDown(EffectCatalog.installed.clear);
+    final base = PatchDump.decode(bourj)!;
+    ZDLInfo shatter({int max = 100, int def = 30}) => ZDLInfo.parse(
+        'SHATTER.ZDL', makeZDL(category: 0x08, id: 452, name: 'Shatter', knobs: ['Time', 'Grain', 'Mix'], knobMax: max, knobDefault: def))!;
+
+    test('knob ranges and defaults come from the file', () {
+      final z = shatter();
+      expect(z.parameterMax, [100, 100, 100]);
+      expect(z.parameterDefault, [30, 30, 30]);
+    });
+
+    test('the assistant can build chains with them, at the file defaults', () {
+      final z = shatter();
+      EffectCatalog.setInstalled([z]);
+      final available = PatchAssistant.availableIds([base]);
+      expect(available, contains(z.patchEffectId));
+      expect(PatchAssistant.effectList(available, category: 'Delay').any((e) => e['name'] == 'Shatter'), isTrue);
+      final e = PatchAssistant.buildPatch({
+        'effects': [
+          {'effect': 'Shatter', 'params': {'Mix': 80}},
+        ],
+      }, base, available);
+      final fx = e.decoded!.effects[0];
+      expect(fx.displayName, 'Shatter');
+      expect(fx.parameters.map((p) => p.raw), [30, 30, 80]);
+      expect(e.decoded!.validationProblem, isNull);
+      expect(() => PatchAssistant.buildPatch({
+            'effects': [
+              {'effect': 'Shatter', 'params': {'Mix': 101}},
+            ],
+          }, base, available), throwsA(isA<SpecError>()), reason: 'above the file\'s maximum');
+    });
+
+    test('removed effects are no longer offered; odd tables are never edited', () {
+      EffectCatalog.setInstalled([shatter()]);
+      EffectCatalog.setInstalled([]);
+      expect(PatchAssistant.lookup('Shatter', PatchAssistant.availableIds([base])), isNull);
+      EffectCatalog.setInstalled([shatter(max: 0)]);
+      expect(EffectCatalog.effect(shatter().patchEffectId), isNull);
+    });
+  });
 }

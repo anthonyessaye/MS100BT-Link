@@ -69,7 +69,7 @@ class EffectManager extends ChangeNotifier {
     if (dirs.isEmpty) return;
     lastFullBackup = dirs.last;
     installed = {for (final e in await scanEffects(dirs.last, source: 'Backup', community: false)) e.pedalName: e.info};
-    EffectCatalog.register(installed.values);
+    _syncCatalog();
   }
 
   Future<void> scanLibrary() async {
@@ -123,11 +123,22 @@ class EffectManager extends ChangeNotifier {
         log.add('Pedal: ${st.files.length}/${EffectPlanValidator.maxFiles} files, ${st.freeBytes ~/ 1024} KB free');
       });
 
+  /// The effects the app (and the assistant) may place in patches: installed files that are in the
+  /// pedal's effect menu (all installed files until the menu has been read this session).
+  void _syncCatalog() {
+    final listed = state?.index.allEffects.toSet();
+    EffectCatalog.setInstalled([
+      for (final e in installed.entries)
+        if (listed == null || listed.contains(e.key)) e.value,
+    ]);
+  }
+
   void _adopt(PedalFileState st) {
     state = st;
     draft = st.index.copy();
     pendingAdds.clear();
     pendingRemovals.clear();
+    _syncCatalog();
   }
 
   /// Copies every file on the pedal to this device (several minutes for ~175 files). Read-only.
@@ -141,7 +152,7 @@ class EffectManager extends ChangeNotifier {
             }));
         lastFullBackup = dir;
         installed = infos;
-        EffectCatalog.register(infos.values);
+        _syncCatalog();
         await scanLibrary();
         notice = 'Backed up ${st.files.length} files to ${dir.path}';
       });
@@ -213,6 +224,51 @@ class EffectManager extends ChangeNotifier {
       out.add(c);
     }
     return out.takeBytes();
+  }
+
+  // Online catalog: what each source offers, without downloading anything (names and sizes only)
+
+  List<RemoteEffect> remote = [];
+  DateTime? remoteAt;
+  Future<void>? _remoteLoad;
+
+  /// Loads the cached list, refreshing it from GitHub when missing or older than a week.
+  Future<void> ensureRemoteCatalog({bool force = false}) => _remoteLoad ??= _loadRemote(force).whenComplete(() => _remoteLoad = null);
+
+  Future<void> _loadRemote(bool force) async {
+    final file = File('${(await AppDirs.effectLibrary()).path}/catalog.json');
+    if (!force && remote.isEmpty && file.existsSync()) {
+      try {
+        final j = jsonDecode(await file.readAsString()) as Map<String, dynamic>;
+        remoteAt = DateTime.tryParse(j['at'] as String? ?? '');
+        remote = [for (final e in (j['effects'] as List)) RemoteEffect.fromJson(e as Map<String, dynamic>)];
+      } catch (_) {}
+    }
+    if (!force && remoteAt != null && DateTime.now().difference(remoteAt!) < const Duration(days: 7)) return;
+    final http = HttpClient()..userAgent = 'MS100BT-Link';
+    final out = <RemoteEffect>[];
+    try {
+      for (final src in EffectSource.all) {
+        final tree = await _getJson(http, Uri.parse('https://api.github.com/repos/${src.owner}/${src.repo}/git/trees/HEAD?recursive=1'))
+            .timeout(const Duration(seconds: 15));
+        for (final e in ((tree['tree'] as List?) ?? const []).cast<Map<String, dynamic>>()) {
+          final path = e['path'] as String? ?? '';
+          if (e['type'] != 'blob' || !path.toUpperCase().endsWith('.ZDL')) continue;
+          if (src.folder.isNotEmpty && !path.startsWith(src.folder)) continue;
+          if (src.community && (path.contains('stock_zdls/') || path.contains('firmware/'))) continue;
+          final (name, model) = EffectSource.pedalName(path.split('/').last);
+          out.add(RemoteEffect(name, model, src.key, (e['size'] as num?)?.toInt() ?? 0));
+        }
+      }
+      remote = out;
+      remoteAt = DateTime.now();
+      await file.writeAsString(jsonEncode({'at': remoteAt!.toIso8601String(), 'effects': [for (final r in out) r.toJson()]}));
+    } catch (e) {
+      log.add('Online effect list: $e'); // keep the cached list
+    } finally {
+      http.close();
+      notifyListeners();
+    }
   }
 
   // Editing the plan
@@ -312,11 +368,35 @@ class EffectManager extends ChangeNotifier {
         installed[item.pedalName] = item.info;
       }
       pendingRemovals.forEach(installed.remove);
-      EffectCatalog.register(installed.values);
+      _syncCatalog();
       _adopt(await fs.readState());
       notice = 'All changes applied and verified. Restart the pedal to see them in its menu. '
           'Copies of everything changed are in ${dir.path}.';
     });
+  }
+
+  /// For the assistant: effects that exist online but are not downloaded, matching a query (names only).
+  List<Map<String, Object>> searchNotDownloaded(String query, {int limit = 25}) {
+    final q = query.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+    final have = {for (final l in library) l.pedalName.toUpperCase()};
+    final seen = <String>{};
+    final out = <Map<String, Object>>[];
+    for (final r in remote) {
+      if (have.contains(r.pedalName.toUpperCase()) || !seen.add('${r.pedalName}#${r.sourceKey}')) continue;
+      final src = EffectSource.all.firstWhere((s) => s.key == r.sourceKey);
+      final hay = '${r.pedalName} ${r.model ?? ''} ${src.label}'.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+      if (q.isNotEmpty && !hay.contains(q)) continue;
+      out.add({
+        'file': r.pedalName,
+        if (r.model != null) 'from_pedal': r.model!,
+        'source': src.label,
+        'size_kb': (r.size / 1024).ceil(),
+        'status': 'Not downloaded. Category, knobs and risk are known only after downloading.',
+        'how_to_get': 'Effects window > Download effects > ${src.label}, then install it on the pedal',
+      });
+      if (out.length >= limit) break;
+    }
+    return out;
   }
 
   /// For the assistant: library effects (and what is on the pedal) matching a query.
@@ -337,4 +417,17 @@ class EffectManager extends ChangeNotifier {
       };
     }).toList();
   }
+}
+
+
+/// An effect file a source offers online (from the repository listing; not downloaded).
+class RemoteEffect {
+  const RemoteEffect(this.pedalName, this.model, this.sourceKey, this.size);
+  final String pedalName, sourceKey;
+  final String? model; // stock files: the pedal family it comes from (e.g. MS-60B)
+  final int size;
+
+  Map<String, Object?> toJson() => {'n': pedalName, 'm': model, 's': sourceKey, 'z': size};
+  static RemoteEffect fromJson(Map<String, dynamic> j) =>
+      RemoteEffect(j['n'] as String, j['m'] as String?, j['s'] as String, (j['z'] as num?)?.toInt() ?? 0);
 }

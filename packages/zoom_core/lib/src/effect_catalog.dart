@@ -71,7 +71,29 @@ abstract final class EffectCatalog {
 
   static final Map<int, CatalogEffect> effects = _load();
 
-  static CatalogEffect? effect(int id) => effects[id];
+  /// Built-in effects from the catalog; installed custom effects from their own file's parameter table
+  /// (raw values 0…max, the file's defaults), when the table is sane.
+  static CatalogEffect? effect(int id) => effects[id] ?? _installedEffect(id);
+
+  static CatalogEffect? _installedEffect(int id) {
+    final z = installed[id];
+    if (z == null || z.parameterMax.length != z.parameters.length) return null;
+    final params = <CatalogParameter>[];
+    for (var i = 0; i < z.parameters.length; i++) {
+      final max = z.parameterMax[i], def = z.parameterDefault[i];
+      if (max < 1 || max > 8191 || def < 0 || def > max) return null; // not a table we understand: no edits
+      params.add(CatalogParameter(z.parameters[i], [IntRun(0, max + 1)], def));
+    }
+    return CatalogEffect(z.displayName, params);
+  }
+
+  /// Replaces the installed custom effects (the pedal's own files, from a backup or after a change).
+  static void setInstalled(Iterable<ZDLInfo> infos) {
+    installed.clear();
+    register(infos);
+  }
+
+  static bool isInstalledCustom(int id) => !effects.containsKey(id) && installed.containsKey(id);
   static String? name(int id) => effects[id]?.name ?? installed[id]?.displayName;
 
   /// Effects read from the pedal's own files (downloaded or custom ones), keyed by patch effect ID.

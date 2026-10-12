@@ -14,6 +14,7 @@ abstract final class PatchAssistant {
   /// The MS-100BT's documented effects plus any effect seen on this pedal.
   static Set<int> availableIds(Iterable<PatchDump> seen) => {
         ...EffectCatalog.ms100btEffectIds,
+        ...EffectCatalog.installed.keys.where((id) => EffectCatalog.effect(id) != null), // custom effects on the pedal
         for (final p in seen)
           for (final e in p.effects)
             if (!e.isEmpty) e.effectId,
@@ -25,7 +26,12 @@ abstract final class PatchAssistant {
       for (final id in ids)
         if (EffectCatalog.effect(id) case final e?)
           if (category == null || (EffectCatalog.category(id) ?? 'Other').toLowerCase() == category.toLowerCase())
-            {'name': e.name, 'category': EffectCatalog.category(id) ?? 'Other', 'knobs': e.parameters.map((p) => p.name).toList()},
+            {
+              'name': e.name,
+              'category': EffectCatalog.category(id) ?? 'Other',
+              'knobs': e.parameters.map((p) => p.name).toList(),
+              if (EffectCatalog.isInstalledCustom(id)) 'note': 'custom effect installed on this pedal; knob values are raw numbers',
+            },
     ];
   }
 
@@ -199,7 +205,10 @@ abstract final class PatchAssistant {
   static int? lookup(String name, Set<int> available) {
     String norm(String s) => s.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
     final key = norm(name);
-    final matches = EffectCatalog.effects.entries.where((e) => norm(e.value.name) == key).map((e) => e.key).toList()..sort();
+    final matches = [
+      ...EffectCatalog.effects.entries.where((e) => norm(e.value.name) == key).map((e) => e.key),
+      ...EffectCatalog.installed.entries.where((e) => norm(e.value.displayName) == key).map((e) => e.key),
+    ]..sort();
     for (final id in matches) {
       if (available.contains(id)) return id;
     }

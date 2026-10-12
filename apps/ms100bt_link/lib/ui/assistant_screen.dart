@@ -92,6 +92,7 @@ class _AssistantScreenState extends State<AssistantScreen> {
           ? _setup()
           : Column(
               children: [
+                if (ai.showLimitNote) _limitNote(),
                 Expanded(
                   child: ai.items.isEmpty
                       ? _empty()
@@ -272,6 +273,29 @@ class _AssistantScreenState extends State<AssistantScreen> {
   Future<void> _try(Proposal p) async {
     if (await ensureUnlocked(context, widget.model)) await ai.tryOnPedal(p.id);
   }
+
+  /// What the assistant can and can't use (closable, remembered).
+  Widget _limitNote() => Container(
+    margin: const EdgeInsets.fromLTRB(12, 10, 12, 0),
+    padding: const EdgeInsets.fromLTRB(10, 8, 4, 8),
+    decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.05), borderRadius: BorderRadius.circular(8)),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Icon(Icons.info_outline, size: 16, color: AppColors.dim),
+        const SizedBox(width: 8),
+        const Expanded(
+          child: Text(
+            'Patches only use effects already on your pedal: the built-in ones and any you installed. '
+            'The assistant may mention other effects you could download and install in Effects, '
+            "but it can't put them in a patch until they're on the pedal.",
+            style: TextStyle(fontSize: 12, color: AppColors.dim),
+          ),
+        ),
+        InkWell(onTap: ai.hideLimitNote, child: const Padding(padding: EdgeInsets.all(4), child: Icon(Icons.close, size: 14, color: AppColors.dim))),
+      ],
+    ),
+  );
 
   Widget _composer() => SafeArea(
     top: false,

@@ -57,12 +57,17 @@ abstract final class ZDLCategory {
 class ZDLInfo {
   const ZDLInfo({required this.fileName, required this.size, required this.headerSize, required this.extendedTag,
       required this.category, required this.type, required this.effectId, required this.version, required this.truncated,
-      required this.displayName, required this.parameters, required this.imports, required this.exports, required this.crc32});
+      required this.displayName, required this.parameters, required this.imports, required this.exports, required this.crc32,
+      this.parameterMax = const [], this.parameterDefault = const []});
 
   final String fileName, extendedTag, version, displayName;
   final int size, headerSize, category, type, effectId, crc32;
   final bool truncated;
   final List<String> parameters, imports, exports;
+
+  /// Per knob, from the file's parameter table: highest raw value and default raw value
+  /// (checked against the catalog with the stock COMP.ZDL: Sense 10/6, Tone 10/6, Level 150/100, ATTCK 1/0).
+  final List<int> parameterMax, parameterDefault;
 
   /// The 28-bit ID inside patch data (checked: LINESEL 02/8 = 0x02000008).
   int get patchEffectId => (category << 24) | effectId;
@@ -105,32 +110,35 @@ class ZDLInfo {
       exports = e..sort();
       imports = i..sort();
     }
-    final (name, params) = _descriptor(d);
+    final (name, params, maxes, defaults) = _descriptor(d);
     return ZDLInfo(
       fileName: fileName, size: d.length, headerSize: headerSize, extendedTag: tag, category: d[60], type: d[61],
       effectId: d[64] | d[65] << 8, version: version, truncated: truncated,
       displayName: name ?? fileName.replaceAll(RegExp(r'\.ZDL$', caseSensitive: false), ''),
       parameters: params, imports: imports, exports: exports, crc32: FSCodec.crc32(d),
+      parameterMax: maxes, parameterDefault: defaults,
     );
   }
 
-  static (String?, List<String>) _descriptor(List<int> d) {
+  static (String?, List<String>, List<int>, List<int>) _descriptor(List<int> d) {
     final needle = 'OnOff\u0000'.codeUnits;
     for (var off = 0; off + 0x60 <= d.length; off++) {
       if (d[off] == 0x4F && _eq(d, off, needle) && _le32(d, off + 12) == 1 && _le32(d, off + 0x30 + 12) == 0xFFFFFFFF) {
         final name = _cstring(d, off + 0x30, 12);
-        final params = <String>[];
+        final params = <String>[], maxes = <int>[], defaults = <int>[];
         var e = off + 0x60;
         while (e + 0x30 <= d.length && params.length < 16) {
           final p = _cstring(d, e, 12);
           if (p.isEmpty || !RegExp(r'^[A-Za-z]').hasMatch(p) || p.codeUnits.any((c) => c > 0x7E || c < 0x20)) break;
           params.add(p);
+          maxes.add(_le32(d, e + 12));
+          defaults.add(_le32(d, e + 16));
           e += 0x30;
         }
-        return (name.isEmpty ? null : name, params);
+        return (name.isEmpty ? null : name, params, maxes, defaults);
       }
     }
-    return (null, const []);
+    return (null, const <String>[], const <int>[], const <int>[]);
   }
 
   static (List<String>, List<String>) _dynamicSymbols(List<int> elf) {

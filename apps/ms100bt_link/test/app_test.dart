@@ -130,4 +130,40 @@ void main() {
       await tester.pumpWidget(const SizedBox());
     });
   }
+
+  test('not-downloaded effects: listed by name, downloaded ones excluded, always with how to get them', () {
+    final mgr = EffectManager(AppModel())
+      ..remote = const [
+        RemoteEffect('SHATTER.ZDL', null, 'themanro', 5770),
+        RemoteEffect('SHATTER.ZDL', null, 'themanro', 5770), // listed twice in a repo: shown once
+        RemoteEffect('WAVEFOLD.ZDL', null, 'matujuice', 9000),
+        RemoteEffect('SVT.ZDL', 'MS-60B', 'stock', 20000),
+      ];
+    final all = mgr.searchNotDownloaded('');
+    expect(all.map((e) => e['file']), ['SHATTER.ZDL', 'WAVEFOLD.ZDL', 'SVT.ZDL']);
+    expect(all.every((e) => '${e['how_to_get']}'.contains('Download effects')), isTrue);
+    expect(all.every((e) => '${e['status']}'.startsWith('Not downloaded')), isTrue);
+    expect(mgr.searchNotDownloaded('wave').map((e) => e['file']), ['WAVEFOLD.ZDL']);
+    expect(mgr.searchNotDownloaded('ms60b').single['from_pedal'], 'MS-60B');
+  });
+
+  test('a not-installed effect can never be placed in a proposal', () {
+    final base = PatchDump.decode(bourjBytes)!;
+    expect(
+      () => PatchAssistant.buildPatch({
+        'effects': [
+          {'effect': 'Shatter'},
+        ],
+      }, base, PatchAssistant.availableIds([base])),
+      throwsA(isA<SpecError>()),
+    );
+  });
 }
+
+final bourjBytes = ('F0 52 00 5E 28 02 10 00 00 06 0A 48 00 00 32 00 00 00 00 00 00 00 00 00 00 00 10 00 00 18 4C 0C 38 00 45 50 01 00 00 00 00 00 '
+        '00 00 00 00 00 20 00 00 72 03 14 40 00 1F 00 43 06 00 00 00 00 00 00 00 00 60 00 28 00 4E 05 10 01 41 00 00 60 30 06 00 00 00 00 12 00 '
+        '00 60 01 00 06 07 40 48 00 32 00 00 00 00 00 00 00 00 00 00 00 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 04 00 00 00 40 54 0F '
+        '42 00 6F 75 72 6A 20 20 20 00 20 20 00 F7')
+    .split(' ')
+    .map((h) => int.parse(h, radix: 16))
+    .toList();

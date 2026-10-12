@@ -152,15 +152,16 @@ List<int> _le32(int v) => [v & 0xFF, (v >> 8) & 0xFF, (v >> 16) & 0xFF, (v >> 24
 
 /// A minimal but well-formed ZDL: standard 56-byte header, an ELF stub, and the firmware's
 /// descriptor table (OnOff, display name, knobs).
+/// Knob records hold the knob's highest raw value and its default (as in stock Zoom files).
 List<int> makeZDL({required int category, required int id, required String name,
-    List<String> knobs = const ['Gain', 'Tone', 'Level'], int padTo = 0}) {
-  List<int> entry(String s, int word3) {
-    final e = [...s.codeUnits.take(12), ...List.filled(12 - (s.length < 12 ? s.length : 12), 0), ..._le32(word3)];
+    List<String> knobs = const ['Gain', 'Tone', 'Level'], int knobMax = 100, int knobDefault = 50, int padTo = 0}) {
+  List<int> entry(String s, int word3, [int word4 = 0]) {
+    final e = [...s.codeUnits.take(12), ...List.filled(12 - (s.length < 12 ? s.length : 12), 0), ..._le32(word3), ..._le32(word4)];
     return [...e, ...List.filled(0x30 - e.length, 0)];
   }
 
   final elf = [0x7F, 0x45, 0x4C, 0x46, ...List.filled(60, 0), ...entry('OnOff', 1), ...entry(name, 0xFFFFFFFF),
-    for (final k in knobs) ...entry(k, 2), ...List.filled(0x30, 0)];
+    for (final k in knobs) ...entry(k, knobMax, knobDefault), ...List.filled(0x30, 0)];
   if (padTo > 76 + elf.length) elf.addAll(List.filled(padTo - 76 - elf.length, 0x11));
   final h = [0, 0, 0, 0, ...'SIZE'.codeUnits, ..._le32(8), ..._le32(56), ..._le32(elf.length), ...'INFO'.codeUnits];
   h.addAll(List.filled(76 - h.length, 0));
