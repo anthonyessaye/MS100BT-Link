@@ -220,4 +220,20 @@ void main() {
       await expectLater(find.byType(HomeScreen), matchesGoldenFile('out/android_$state.png'));
     });
   }
+
+  testWidgets('android_bluetooth_midi', (tester) async {
+    debugIsMac = false;
+    MidiControl.debugAndroid = true;
+    addTearDown(() => MidiControl.debugAndroid = null);
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final midi = MidiControl(link: AppModel());
+    midi.bluetoothMidi['AA:BB'] = (name: 'M-VAVE Chocolate', source: 'paired in Android settings');
+    midi.bluetoothMidi['CC:DD'] = (name: 'FS-4 BLE', source: 'found nearby');
+    midi.bluetoothLog.addAll(['12:00:01 [flutter_midi_command] devices: platform=[] ble=[FS-4 BLE(CC:DD)] => 1 merged']);
+    await tester.pumpWidget(app(MidiScreen(midi: midi)));
+    await tester.pump(const Duration(milliseconds: 300));
+    await expectLater(find.byType(MidiScreen), matchesGoldenFile('out/android_bluetooth_midi.png'));
+  });
 }

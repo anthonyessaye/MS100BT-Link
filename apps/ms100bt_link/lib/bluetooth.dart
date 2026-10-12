@@ -6,9 +6,13 @@ import 'package:flutter/services.dart';
 import 'package:zoom_core/zoom_core.dart';
 
 class PairedDevice {
-  const PairedDevice(this.address, this.name);
+  const PairedDevice(this.address, this.name, {this.type = 0});
   final String address;
   final String name;
+
+  /// Android's Bluetooth device type: 1 classic, 2 BLE, 3 dual (0 unknown).
+  final int type;
+  bool get canBeBleMidi => type == 2 || type == 3;
   bool get looksLikePedal => name.toUpperCase().contains('MS-100') || name.toUpperCase().contains('ZOOM');
 }
 
@@ -22,7 +26,7 @@ class BluetoothBridge implements PedalTransport {
 
   static Future<List<PairedDevice>> pairedDevices() async {
     final list = await _method.invokeListMethod<Map<dynamic, dynamic>>('pairedDevices') ?? const [];
-    return [for (final d in list) PairedDevice(d['address'] as String, d['name'] as String? ?? '?')];
+    return [for (final d in list) PairedDevice(d['address'] as String, d['name'] as String? ?? '?', type: (d['type'] as int?) ?? 0)];
   }
 
   /// Opens the pedal's Serial Port (SDP 0x1101) channel.
@@ -49,6 +53,10 @@ class BluetoothBridge implements PedalTransport {
 
   /// Asks for the Bluetooth scan permissions (Android); throws a PlatformException if refused.
   static Future<void> ensureScanPermission() => _method.invokeMethod<void>('ensureScanPermission');
+
+  /// Runtime permission state (Android): permission name → granted / denied / blocked.
+  static Future<Map<String, String>> permissions() async =>
+      (await _method.invokeMapMethod<String, String>('permissions')) ?? const {};
 
   /// Opens this app's page in system Settings (to allow a permission that was blocked).
   static Future<void> openSettings() => _method.invokeMethod<void>('openSettings');

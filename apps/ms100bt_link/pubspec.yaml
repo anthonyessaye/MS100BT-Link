@@ -43,6 +43,7 @@ dependencies:
   flutter_midi_command: ^1.4.0
   material_ui: ^1.6.0
   flutter_midi_command_ble: ^1.4.0
+  universal_ble: ^2.3.0
 
 dev_dependencies:
   flutter_test:

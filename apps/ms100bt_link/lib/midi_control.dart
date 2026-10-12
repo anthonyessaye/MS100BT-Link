@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_midi_command/flutter_midi_command.dart';
 import 'package:flutter_midi_command_ble/flutter_midi_command_ble.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:universal_ble/universal_ble.dart' show UniversalBle;
 import 'package:zoom_core/zoom_core.dart';
 
 import 'app_model.dart';
@@ -39,10 +40,10 @@ class MidiInput {
   bool get isPress => value >= 64 || (kind == MidiKind.note && value > 0) || kind == MidiKind.program;
 
   String get label => switch (kind) {
-        MidiKind.cc => 'CC $number = $value · ch $channel',
-        MidiKind.note => 'Note $number vel $value · ch $channel',
-        MidiKind.program => 'Program $number · ch $channel',
-      };
+    MidiKind.cc => 'CC $number = $value · ch $channel',
+    MidiKind.note => 'Note $number vel $value · ch $channel',
+    MidiKind.program => 'Program $number · ch $channel',
+  };
 }
 
 class MidiTrigger {
@@ -51,14 +52,13 @@ class MidiTrigger {
   final int channel, number;
   bool matches(MidiInput m) => m.kind == kind && m.channel == channel && m.number == number;
   String get label => switch (kind) {
-        MidiKind.cc => 'CC $number · ch $channel',
-        MidiKind.note => 'Note $number · ch $channel',
-        MidiKind.program => 'PC $number · ch $channel',
-      };
+    MidiKind.cc => 'CC $number · ch $channel',
+    MidiKind.note => 'Note $number · ch $channel',
+    MidiKind.program => 'PC $number · ch $channel',
+  };
   Map<String, Object> toJson() => {'kind': kind.name, 'channel': channel, 'number': number};
-  static MidiTrigger? fromJson(Object? j) => j is Map
-      ? MidiTrigger(MidiKind.values.byName(j['kind'] as String), j['channel'] as int, j['number'] as int)
-      : null;
+  static MidiTrigger? fromJson(Object? j) =>
+      j is Map ? MidiTrigger(MidiKind.values.byName(j['kind'] as String), j['channel'] as int, j['number'] as int) : null;
 }
 
 enum MidiActionType { toggleEffect, nextPatch, previousPatch, selectPatch, parameter, switchMode, nothing }
@@ -71,14 +71,14 @@ class MidiAction {
 
   bool get isContinuous => type == MidiActionType.parameter;
   String get label => switch (type) {
-        MidiActionType.toggleEffect => 'Toggle FX ${slot + 1}',
-        MidiActionType.nextPatch => 'Next patch',
-        MidiActionType.previousPatch => 'Previous patch',
-        MidiActionType.selectPatch => 'Load patch ${slot + 1}',
-        MidiActionType.parameter => 'FX ${slot + 1} knob ${index + 1}',
-        MidiActionType.switchMode => 'Switch Stomp/Patch mode',
-        MidiActionType.nothing => 'Nothing',
-      };
+    MidiActionType.toggleEffect => 'Toggle FX ${slot + 1}',
+    MidiActionType.nextPatch => 'Next patch',
+    MidiActionType.previousPatch => 'Previous patch',
+    MidiActionType.selectPatch => 'Load patch ${slot + 1}',
+    MidiActionType.parameter => 'FX ${slot + 1} knob ${index + 1}',
+    MidiActionType.switchMode => 'Switch Stomp/Patch mode',
+    MidiActionType.nothing => 'Nothing',
+  };
   Map<String, Object> toJson() => {'type': type.name, 'slot': slot, 'index': index};
   static MidiAction? fromJson(Object? j) => j is Map
       ? MidiAction(MidiActionType.values.byName(j['type'] as String), slot: j['slot'] as int? ?? 0, index: j['index'] as int? ?? 0)
@@ -105,7 +105,7 @@ enum ControlMode { stomp, patch }
 
 class MidiMapping {
   MidiMapping({String? id, this.trigger, required this.action, this.patchAction, this.behavior})
-      : id = id ?? '${DateTime.now().microsecondsSinceEpoch}-${_n++}';
+    : id = id ?? '${DateTime.now().microsecondsSinceEpoch}-${_n++}';
   static int _n = 0;
   final String id;
   MidiTrigger? trigger;
@@ -121,15 +121,20 @@ class MidiMapping {
 
   MidiAction actionIn(ControlMode m) => m == ControlMode.patch ? (patchAction ?? action) : action;
 
-  Map<String, Object?> toJson() =>
-      {'id': id, 'trigger': trigger?.toJson(), 'action': action.toJson(), 'patchAction': patchAction?.toJson(), 'behavior': behavior?.name};
+  Map<String, Object?> toJson() => {
+    'id': id,
+    'trigger': trigger?.toJson(),
+    'action': action.toJson(),
+    'patchAction': patchAction?.toJson(),
+    'behavior': behavior?.name,
+  };
   static MidiMapping fromJson(Map<String, dynamic> j) => MidiMapping(
-        id: j['id'] as String?,
-        trigger: MidiTrigger.fromJson(j['trigger']),
-        action: MidiAction.fromJson(j['action']) ?? const MidiAction(MidiActionType.nothing),
-        patchAction: MidiAction.fromJson(j['patchAction']),
-        behavior: SwitchBehavior.values.where((b) => b.name == j['behavior']).firstOrNull,
-      );
+    id: j['id'] as String?,
+    trigger: MidiTrigger.fromJson(j['trigger']),
+    action: MidiAction.fromJson(j['action']) ?? const MidiAction(MidiActionType.nothing),
+    patchAction: MidiAction.fromJson(j['patchAction']),
+    behavior: SwitchBehavior.values.where((b) => b.name == j['behavior']).firstOrNull,
+  );
 }
 
 /// Listens to MIDI inputs and turns mapped messages into pedal actions. Port of the Mac MIDIControl.
@@ -168,11 +173,14 @@ class MidiControl extends ChangeNotifier {
 
   /// Six switches: FX 1–6 in Stomp mode, patches 01–06 in Patch mode; plus previous/next.
   static List<MidiMapping> defaultMappings() => [
-        for (var i = 0; i < 6; i++)
-          MidiMapping(action: MidiAction(MidiActionType.toggleEffect, slot: i), patchAction: MidiAction(MidiActionType.selectPatch, slot: i)),
-        MidiMapping(action: const MidiAction(MidiActionType.previousPatch)),
-        MidiMapping(action: const MidiAction(MidiActionType.nextPatch)),
-      ];
+    for (var i = 0; i < 6; i++)
+      MidiMapping(
+        action: MidiAction(MidiActionType.toggleEffect, slot: i),
+        patchAction: MidiAction(MidiActionType.selectPatch, slot: i),
+      ),
+    MidiMapping(action: const MidiAction(MidiActionType.previousPatch)),
+    MidiMapping(action: const MidiAction(MidiActionType.nextPatch)),
+  ];
 
   void _save() {
     prefs?.setString('midiMappings', jsonEncode([for (final m in mappings) m.toJson()]));
@@ -189,25 +197,31 @@ class MidiControl extends ChangeNotifier {
       // (see scanBluetoothMidi). macOS does it in Apple's Bluetooth MIDI window.
       final m = Platform.isAndroid ? MidiCommand(bleTransport: UniversalBleMidiTransport()) : MidiCommand();
       _midi = m;
+      m.logHandler = (line) {
+        bluetoothLog.add('${DateTime.now().toIso8601String().substring(11, 19)} $line');
+        if (bluetoothLog.length > 80) bluetoothLog.removeAt(0);
+      };
       _rx = m.onMidiPacketReceived?.listen((p) {
         final msg = MidiInput.parse(p.data);
         if (msg != null) receive(msg);
       });
       _setup = m.onMidiSetupChanged?.listen((_) => refreshDevices());
       await refreshDevices();
+      if (canScanBluetooth) unawaited(_reconnectRemembered());
     } catch (e) {
       status = 'MIDI unavailable: $e';
       notifyListeners();
     }
   }
 
-  /// Lists MIDI devices and connects every input that isn't connected yet.
+  /// Lists MIDI devices and connects USB/system inputs that aren't connected yet. Bluetooth controllers are
+  /// connected only on request (or when remembered): connecting while a scan runs fails on Android.
   Future<void> refreshDevices() async {
     final m = _midi;
     if (m == null) return;
     try {
       devices = (await m.devices) ?? [];
-      for (final d in devices.where((d) => !d.connected && d.inputPorts.isNotEmpty)) {
+      for (final d in devices.where((d) => !d.connected && d.inputPorts.isNotEmpty && d.type != MidiDeviceType.ble)) {
         try {
           await m.connectToDevice(d);
         } catch (_) {}
@@ -218,12 +232,48 @@ class MidiControl extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Android: Bluetooth MIDI controllers found by the last scan, and whether a scan is running.
-  bool get canScanBluetooth => !kIsWeb && Platform.isAndroid;
-  bool scanningBluetooth = false;
-  List<MidiDevice> get bluetoothDevices => devices.where((d) => d.type == MidiDeviceType.ble).toList();
+  // Bluetooth MIDI on Android. Android doesn't open Bluetooth MIDI controllers for apps, so the app does,
+  // through the plugin's BLE transport. Controllers come from three places: a scan (the controller must be
+  // advertising), devices Android already has connected, and devices paired in Android's Bluetooth settings
+  // (a paired controller often stops advertising, so a scan alone misses it).
 
-  /// Scans 8 s for Bluetooth MIDI controllers (they must be on and not connected to another device).
+  bool get canScanBluetooth => debugAndroid ?? (!kIsWeb && Platform.isAndroid);
+
+  /// Tests run on a Mac host: force the Android Bluetooth MIDI UI.
+  @visibleForTesting
+  static bool? debugAndroid;
+  bool scanningBluetooth = false;
+  String? connectingId;
+
+  /// The plugin's Bluetooth messages (shown under "Bluetooth MIDI details" to diagnose a controller).
+  final List<String> bluetoothLog = [];
+
+  /// Bluetooth MIDI controllers the app knows about: id → (name, where it was found).
+  final Map<String, ({String name, String source})> bluetoothMidi = {};
+
+  /// The device objects of controllers connected by id (their connection state stays live).
+  final Map<String, MidiDevice> _bleObjects = {};
+  bool isConnected(String id) => _bleObjects[id]?.connected == true || devices.any((d) => d.id == id && d.connected);
+
+  Map<String, String> get _remembered {
+    try {
+      return (jsonDecode(prefs?.getString('bleMidiDevices') ?? '{}') as Map).cast<String, String>();
+    } catch (_) {
+      return {};
+    }
+  }
+
+  void _remember(String id, String name) => prefs?.setString('bleMidiDevices', jsonEncode({..._remembered, id: name}));
+
+  void forget(String id) {
+    prefs?.setString('bleMidiDevices', jsonEncode(Map.of(_remembered)..remove(id)));
+    bluetoothMidi.remove(id);
+    final d = _bleObjects.remove(id) ?? devices.where((d) => d.id == id).firstOrNull;
+    if (d != null && d.connected) _midi?.disconnectDevice(d);
+    notifyListeners();
+  }
+
+  /// Lists Bluetooth MIDI controllers: remembered, already connected to Android, paired, then an 8-second scan.
   Future<void> scanBluetoothMidi() async {
     final m = _midi;
     if (m == null || scanningBluetooth) return;
@@ -234,28 +284,79 @@ class MidiControl extends ChangeNotifier {
       await BluetoothBridge.ensureScanPermission();
       await m.startBluetooth();
       await m.waitUntilBluetoothIsInitialized();
+      _remembered.forEach((id, name) => bluetoothMidi[id] = (name: name, source: 'used before'));
+      try {
+        for (final d in await UniversalBle.getSystemDevices(withServices: [midiServiceId])) {
+          bluetoothMidi[d.deviceId] = (name: d.name ?? d.deviceId, source: 'connected to Android');
+        }
+      } catch (e) {
+        bluetoothLog.add('system devices: $e');
+      }
+      try {
+        for (final d in (await BluetoothBridge.pairedDevices()).where((d) => d.canBeBleMidi && !d.looksLikePedal)) {
+          bluetoothMidi.putIfAbsent(d.address, () => (name: d.name, source: 'paired in Android settings'));
+        }
+      } catch (e) {
+        bluetoothLog.add('paired devices: $e');
+      }
+      notifyListeners();
       await m.startScanningForBluetoothDevices();
       await Future<void>.delayed(const Duration(seconds: 8));
       m.stopScanningForBluetoothDevices();
       devices = (await m.devices) ?? devices;
-      if (bluetoothDevices.isEmpty) {
-        status = 'No Bluetooth MIDI controllers found. Turn the controller on (not connected to another phone or computer) and scan again.';
+      for (final d in devices.where((d) => d.type == MidiDeviceType.ble)) {
+        bluetoothMidi[d.id] = (name: d.name, source: 'found nearby');
+      }
+      if (bluetoothMidi.isEmpty) {
+        status =
+            'No Bluetooth MIDI controllers found. Turn the controller on and make sure it is not connected to '
+            'another phone or computer. On Android 11 and older, Location must also be on.';
       }
     } catch (e) {
       status = 'Bluetooth MIDI: $e';
+      bluetoothLog.add('scan: $e');
     }
     scanningBluetooth = false;
     notifyListeners();
   }
 
-  Future<void> connectDevice(MidiDevice d) async {
-    try {
-      await _midi?.connectToDevice(d);
-      devices = (await _midi?.devices) ?? devices;
-    } catch (e) {
-      status = 'Could not connect to ${d.name}: $e';
-    }
+  /// Connects a Bluetooth MIDI controller by id (works whether or not it was seen in a scan) and remembers it.
+  Future<void> connectBluetooth(String id, String name) async {
+    final m = _midi;
+    if (m == null || connectingId != null) return;
+    connectingId = id;
+    status = null;
     notifyListeners();
+    try {
+      await BluetoothBridge.ensureScanPermission();
+      await m.startBluetooth();
+      final known = devices.where((d) => d.id == id).firstOrNull ?? MidiDevice(id, name, MidiDeviceType.ble, false);
+      _bleObjects[id] = known;
+      await m.connectToDevice(known, awaitConnectionTimeout: const Duration(seconds: 25));
+      _remember(id, name);
+      devices = (await m.devices) ?? devices;
+    } catch (e) {
+      status = 'Could not connect to $name: $e';
+      bluetoothLog.add('connect $name: $e');
+    }
+    connectingId = null;
+    notifyListeners();
+  }
+
+  /// Reconnects controllers used before (quietly; only if Bluetooth permission is already granted).
+  Future<void> _reconnectRemembered() async {
+    final remembered = _remembered;
+    if (remembered.isEmpty) return;
+    try {
+      final perms = await BluetoothBridge.permissions();
+      if (perms.values.any((v) => v != 'granted')) return; // don't prompt at launch
+    } catch (_) {
+      return;
+    }
+    for (final MapEntry(key: id, value: name) in remembered.entries) {
+      bluetoothMidi[id] = (name: name, source: 'used before');
+      await connectBluetooth(id, name);
+    }
   }
 
   void receive(MidiInput m) {

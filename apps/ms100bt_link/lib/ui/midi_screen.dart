@@ -119,7 +119,12 @@ class _MidiScreenState extends State<MidiScreen> {
                         const SizedBox(height: 4),
                         Text(
                           'Last message: ${midi.lastMessage ?? '—'}',
-                          style: const TextStyle(color: AppColors.dim, fontFamily: 'monospace', fontFamilyFallback: ['Menlo'], fontSize: 12),
+                          style: const TextStyle(
+                            color: AppColors.dim,
+                            fontFamily: 'monospace',
+                            fontFamilyFallback: ['Menlo'],
+                            fontSize: 12,
+                          ),
                         ),
                         if (midi.status != null) Text(midi.status!, style: const TextStyle(color: AppColors.accent)),
                         if (midi.canScanBluetooth) ...[
@@ -144,14 +149,50 @@ class _MidiScreenState extends State<MidiScreen> {
                                     ),
                             ],
                           ),
-                          for (final d in midi.bluetoothDevices)
+                          for (final MapEntry(key: id, value: d) in midi.bluetoothMidi.entries)
                             ListTile(
                               contentPadding: EdgeInsets.zero,
-                              leading: Icon(Icons.piano, color: d.connected ? AppColors.accent : AppColors.dim),
+                              leading: Icon(Icons.piano, color: midi.isConnected(id) ? AppColors.accent : AppColors.dim),
                               title: Text(d.name),
-                              trailing: d.connected
-                                  ? const Text('Connected', style: TextStyle(color: AppColors.accent))
-                                  : TextButton(onPressed: () => midi.connectDevice(d), child: const Text('Connect')),
+                              subtitle: Text(d.source, style: const TextStyle(fontSize: 12)),
+                              trailing: midi.connectingId == id
+                                  ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                                  : Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        midi.isConnected(id)
+                                            ? const Text('Connected', style: TextStyle(color: AppColors.accent))
+                                            : TextButton(
+                                                onPressed: midi.connectingId == null ? () => midi.connectBluetooth(id, d.name) : null,
+                                                child: const Text('Connect'),
+                                              ),
+                                        IconButton(
+                                          tooltip: 'Forget',
+                                          onPressed: () => midi.forget(id),
+                                          icon: const Icon(Icons.close, size: 18),
+                                        ),
+                                      ],
+                                    ),
+                            ),
+                          if (midi.bluetoothLog.isNotEmpty)
+                            ExpansionTile(
+                              tilePadding: EdgeInsets.zero,
+                              title: const Text('Bluetooth MIDI details', style: TextStyle(fontSize: 13)),
+                              children: [
+                                Container(
+                                  height: 160,
+                                  width: double.infinity,
+                                  color: Colors.black26,
+                                  padding: const EdgeInsets.all(8),
+                                  child: SingleChildScrollView(
+                                    reverse: true,
+                                    child: SelectableText(
+                                      midi.bluetoothLog.join('\n'),
+                                      style: const TextStyle(fontSize: 11, fontFamily: 'monospace', fontFamilyFallback: ['Menlo']),
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
                         ],
                         const SizedBox(height: 10),

@@ -190,7 +190,8 @@ class MainActivity : FlutterActivity() {
     private fun pairedDevices(result: MethodChannel.Result) {
         val a = adapter ?: return result.error("bluetooth", "This device has no Bluetooth.", null)
         if (!a.isEnabled) return result.error("bluetooth_off", "Bluetooth is off.", null)
-        result.success(a.bondedDevices.map { mapOf("address" to it.address, "name" to (it.name ?: "?")) })
+        // type: 1 classic, 2 BLE, 3 dual (BLE MIDI controllers are 2 or 3)
+        result.success(a.bondedDevices.map { mapOf("address" to it.address, "name" to (it.name ?: "?"), "type" to it.type) })
     }
 
     @SuppressLint("MissingPermission")
