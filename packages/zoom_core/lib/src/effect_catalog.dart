@@ -3,6 +3,7 @@
 import 'dart:convert';
 
 import 'catalog_data.dart' as data;
+import 'effect_files.dart';
 
 /// One run of display values: an integer run or one literal.
 sealed class Segment {
@@ -71,7 +72,18 @@ abstract final class EffectCatalog {
   static final Map<int, CatalogEffect> effects = _load();
 
   static CatalogEffect? effect(int id) => effects[id];
-  static String? name(int id) => effects[id]?.name;
+  static String? name(int id) => effects[id]?.name ?? installed[id]?.displayName;
+
+  /// Effects read from the pedal's own files (downloaded or custom ones), keyed by patch effect ID.
+  /// They have names and knob names but no known value ranges.
+  static final Map<int, ZDLInfo> installed = {};
+
+  static void register(Iterable<ZDLInfo> infos) {
+    for (final z in infos) {
+      if (!z.isSharedLibrary) installed[z.patchEffectId] = z;
+    }
+  }
+
   static String? category(int id) => categories[(id >> 24) & 0xFF];
 
   static Map<int, CatalogEffect> _load() {

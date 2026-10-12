@@ -1,5 +1,6 @@
 // Port of MS100BTLink/Sources/ZoomCore/Messages.swift. Keep the two in sync.
 
+import 'effect_files.dart';
 import 'patch_dump.dart';
 
 String hex(Iterable<int> bytes) =>
@@ -123,6 +124,20 @@ class StorePatch extends Message {
   bool get isWrite => true;
 }
 
+/// `F0 52 00 <id> 60 <body…> F7`: pedal file system (effect files and menu). Only the exact shapes in
+/// [Allowlist] pass; the session gates reads and writes separately.
+class FileSystemMessage extends Message {
+  const FileSystemMessage(this.deviceId, this.body);
+  final int deviceId;
+  final List<int> body;
+  @override
+  List<int> get bytes => [0xF0, 0x52, 0x00, deviceId, 0x60, ...body, 0xF7];
+  @override
+  String get label => 'file system 60 ${body.isEmpty ? '??' : body.first.toRadixString(16).padLeft(2, '0').toUpperCase()}';
+}
+
+enum FileSystemAccess { read, write }
+
 class AllowlistViolation implements Exception {
   AllowlistViolation(this.frame, this.reason);
   final List<int> frame;
@@ -144,7 +159,6 @@ abstract final class Allowlist {
     0x17: 'unknown, firmware template',
     0x20: 'unknown, firmware template',
     0x21: 'unknown, firmware template',
-    0x60: 'filesystem access (updater ZDL upload)',
     0x61: 'Bluetooth-module function (updater)',
   };
 
@@ -187,6 +201,8 @@ abstract final class Allowlist {
       if (p == null) refuse('patch does not decode');
       final problem = p.validationProblem;
       if (problem != null) refuse('patch failed validation: $problem');
+    } else if (op == 0x60) {
+      _validateFileSystem(f);
     } else if (op == 0x32) {
       final slot = f.length > 8 ? f[8] : 0;
       final template = [0xF0, 0x52, 0x00, id, 0x32, 0x01, 0x00, 0x00, slot, 0x00, 0x00, 0x00, 0x00, 0x00, 0xF7];
@@ -194,6 +210,75 @@ abstract final class Allowlist {
       if (slot >= patchSlots) refuse('patch slot $slot out of range');
     } else {
       refuse('opcode ${op.toRadixString(16)} is not allowlisted');
+    }
+  }
+
+  /// Files never written or deleted (Bluetooth pairing data).
+  static const protectedFiles = {'PAIR.DAT'};
+  static const maxFileBlock = 4096;
+
+  static FileSystemAccess? fileSystemAccess(List<int> f) {
+    if (f.length < 7 || f[0] != 0xF0 || f[1] != 0x52 || f[4] != 0x60) return null;
+    return switch (f[5]) {
+      0x24 || 0x23 => FileSystemAccess.write,
+      0x20 => f[6] == 0x01 ? FileSystemAccess.write : FileSystemAccess.read,
+      _ => FileSystemAccess.read,
+    };
+  }
+
+  /// Exact shapes of the file-system commands verified on an MS-100BT (lopezchau/zoom-ms100bt-bluetooth).
+  /// Port of Allowlist.validateFileSystem (Swift).
+  static void _validateFileSystem(List<int> f) {
+    Never refuse(String why) => throw AllowlistViolation(f, 'file system: $why');
+    final body = f.sublist(5, f.length - 1);
+    if (body.isEmpty) refuse('empty');
+    final sub = body.first;
+
+    String name(int i) {
+      if (body.length <= i + 1 || body.last != 0) refuse('missing file name terminator');
+      final raw = body.sublist(i, body.length - 1);
+      final n = String.fromCharCodes(raw);
+      if (raw.any((c) => c > 0x7F) || !FSCodec.isValidName(n)) refuse('invalid file name');
+      return n;
+    }
+
+    void writable(String n) {
+      if (protectedFiles.contains(n.toUpperCase())) refuse('$n is protected');
+      if (!FSCodec.isSafeEffectName(n) && n != EffectIndex.fileName) refuse('$n is not an 8.3 .ZDL effect or the effect menu');
+    }
+
+    switch (sub) {
+      case 0x02 || 0x09 || 0x27:
+        if (body.length != 1) refuse('bad length');
+      case 0x05:
+        if (!_eq(body, const [0x05, 0x00])) refuse('bad ACK');
+      case 0x29:
+        if (!_eq(body, const [0x29, 0, 0, 0, 0, 0])) refuse('bad disk-usage request');
+      case 0x25 || 0x26:
+        if (!_eq(body, [sub, 0, 0, 0x2A, 0])) refuse('bad listing request');
+      case 0x20:
+        if (body.length < 13 || !(body[1] == 0x01 || body[1] == 0x02) || body.sublist(2, 11).any((b) => b != 0)) refuse('bad open');
+        final n = name(11);
+        if (body[1] == 0x01) writable(n);
+      case 0x22:
+        final size = body.length == 11 ? FSCodec.u35(body, 6) : null;
+        if (size == null || size < 1 || size > maxFileBlock) refuse('bad read');
+      case 0x21:
+        if (body.length != 6) refuse('bad close');
+      case 0x24:
+        writable(name(1));
+      case 0x23:
+        final size = body.length > 16 ? FSCodec.u35(body, 6) : null;
+        if (size == null || size < 1 || size > maxFileBlock) refuse('bad write header');
+        final packed = body.sublist(11, body.length - 5);
+        if (packed.length != size + (size + 6) ~/ 7) refuse('block length does not match its size');
+        final data = unpack7(packed);
+        final crc = FSCodec.u35(body, body.length - 5);
+        if (data.length != size || crc == null || (crc ^ 0xFFFFFFFF) != FSCodec.crc32(data)) {
+          refuse('block checksum does not match its data');
+        }
+      default:
+        refuse('command ${sub.toRadixString(16)} is not allowlisted');
     }
   }
 

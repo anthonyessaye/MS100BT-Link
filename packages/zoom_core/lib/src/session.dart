@@ -42,6 +42,15 @@ class PedalSession {
   bool writesEnabled = false;
   bool editModeActive = false;
 
+  /// File-system reads (listing, backup) are refused unless a file-system session is open.
+  bool fileSystemEnabled = false;
+
+  /// File writes/deletes additionally need this (set only while an approved change plan runs) and [writesEnabled].
+  bool fileSystemWritesEnabled = false;
+
+  /// Replies to file-system commands, collected for [PedalFileSystem].
+  final List<List<int>> fileSystemInbox = [];
+
   IdentityReply? identity;
   PatchDump? patch;
   DateTime? _identityAt, _patchAt;
@@ -61,6 +70,13 @@ class PedalSession {
 
   Future<void> send(Message m) async {
     if (m.isWrite && !writesEnabled) throw WriteLocked(m.label);
+    switch (Allowlist.fileSystemAccess(m.bytes)) {
+      case FileSystemAccess.read when !fileSystemEnabled:
+        throw WriteLocked('${m.label} (file-system session closed)');
+      case FileSystemAccess.write when !(fileSystemWritesEnabled && writesEnabled && fileSystemEnabled):
+        throw WriteLocked('${m.label} (file writes locked)');
+      default:
+    }
     Allowlist.validate(m.bytes);
     log.add('→ ${hex(m.bytes)}  ${m.label}');
     await transport.write(m.bytes);
@@ -85,6 +101,10 @@ class PedalSession {
           continue;
         }
         final z = ZoomSysEx.decode(e.bytes);
+        if (z != null && z.opcode == 0x60) {
+          fileSystemInbox.add(e.bytes);
+          continue;
+        }
         if (z != null && z.opcode == 0x31 && z.payload.length >= 4 && patch != null) {
           // The pedal reporting a knob/switch change: mirror it locally.
           final edit = PatchEdit(patch!);
@@ -100,7 +120,7 @@ class PedalSession {
     }
   }
 
-  Future<T?> _waitFor<T>(Duration timeout, T? Function() get) async {
+  Future<T?> waitFor<T>(Duration timeout, T? Function() get) async {
     final deadline = DateTime.now().add(timeout);
     while (DateTime.now().isBefore(deadline)) {
       final v = get();
@@ -116,7 +136,7 @@ class PedalSession {
     for (final m in const [IdentityRequest(), IdentityRequestBroadcast()]) {
       final t = DateTime.now();
       await send(m);
-      final r = await _waitFor(timeout, () => _fresh(identity, _identityAt, t));
+      final r = await waitFor(timeout, () => _fresh(identity, _identityAt, t));
       if (r != null) return r;
     }
     return null;
@@ -148,7 +168,7 @@ class PedalSession {
     try {
       final t = DateTime.now();
       await send(RequestCurrentPatch(id));
-      return await _waitFor(timeout, () => _fresh(patch, _patchAt, t));
+      return await waitFor(timeout, () => _fresh(patch, _patchAt, t));
     } finally {
       if (!hold) await leaveEditMode();
     }

@@ -89,7 +89,16 @@ class EffectSlot {
   List<ParameterValue> get parameters {
     if (isEmpty || raw.length != PatchDump.effectBlockSize) return const [];
     final def = EffectCatalog.effect(effectId);
-    if (def == null) return const [];
+    if (def == null) {
+      // Effect known only from the pedal's own file: knob names, raw values.
+      final z = EffectCatalog.installed[effectId];
+      if (z == null) return const [];
+      return [
+        for (var i = 0; i < z.parameters.length && i < PatchDump.parameterFields.length; i++)
+          ParameterValue(i, z.parameters[i], readBits(raw, PatchDump.parameterFields[i].$1, PatchDump.parameterFields[i].$2),
+              '${readBits(raw, PatchDump.parameterFields[i].$1, PatchDump.parameterFields[i].$2)}'),
+      ];
+    }
     final out = <ParameterValue>[];
     for (var i = 0; i < def.parameters.length && i < PatchDump.parameterFields.length; i++) {
       final f = PatchDump.parameterFields[i];
@@ -164,7 +173,7 @@ class PatchDump {
     if (!lengthMatches || unpacked.length != 122) return 'unexpected length ${raw.length}';
     if (name == null || name!.contains('?')) return 'name has unsupported characters';
     for (final e in effects.where((e) => !e.isEmpty)) {
-      if (EffectCatalog.effect(e.effectId) == null) {
+      if (EffectCatalog.effect(e.effectId) == null && EffectCatalog.installed[e.effectId] == null) {
         return 'FX${e.index + 1} has unknown effect ID ${e.effectId.toRadixString(16)}';
       }
       final bad = e.parameters.where((p) => p.display == null);
