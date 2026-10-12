@@ -1,0 +1,57 @@
+import AppKit
+import SwiftUI
+
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        NSApp.setActivationPolicy(.regular)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
+
+    /// Leave edit mode (0x51) and close the channel before quitting.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard let model = LinkModel.shared, model.isOpen else { return .terminateNow }
+        Task { @MainActor in
+            await model.shutdown()
+            sender.reply(toApplicationShouldTerminate: true)
+        }
+        return .terminateLater
+    }
+}
+
+@main
+struct MS100BTLinkApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+    @StateObject private var model = LinkModel()
+    @StateObject private var midi = MIDIControl()
+
+    var body: some Scene {
+        WindowGroup("MS-100BT Link") {
+            MainView()
+                .environmentObject(model)
+                .environmentObject(midi)
+                .frame(minWidth: 1040, minHeight: 660)
+                .preferredColorScheme(.dark)
+                .onAppear { midi.model = model }
+        }
+        .windowStyle(.hiddenTitleBar)
+        .commands {
+            CommandGroup(after: .windowArrangement) {
+                OpenDiagnosticsButton()
+            }
+        }
+
+        Window("Diagnostics", id: "diagnostics") {
+            DiagnosticsView().environmentObject(model)
+        }
+    }
+}
+
+struct OpenDiagnosticsButton: View {
+    @Environment(\.openWindow) private var openWindow
+    var body: some View {
+        Button("Diagnostics") { openWindow(id: "diagnostics") }
+            .keyboardShortcut("d", modifiers: [.command, .option])
+    }
+}

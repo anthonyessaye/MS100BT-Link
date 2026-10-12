@@ -1,0 +1,11 @@
+# Zoom's firmware, updater binaries and manuals: copyrighted, download them from zoomcorp.com
+vendor/
+# local wire logs
+logs/
+# build output
+.build/
+MS100BTLink/.build/
+MS100BTLink/build/
+.swiftpm/
+.DS_Store
+*.xcuserstate
