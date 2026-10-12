@@ -5,9 +5,9 @@ Usage: python3 music.py <studio|neon> <out.wav>
 studio: 124 BPM house groove in A minor (Am F C G), sidechained pads and stabs, pluck arp.
 neon:   104 BPM synthwave in F# minor (F#m D A E), gated arps, big pads, octave bass.
 
-The arrangement follows the video's 98-beat timeline (bars of 4 beats):
-  bars 0-1 intro, 2 drop (pedals land), 9 arp joins, 15 breakdown + riser,
-  16 second drop (AI scene), 22 final hit (outro), then the tail fades.
+The arrangement follows the video's 138-beat timeline (bars of 4 beats; scenes in renderer/Scenes.swift):
+  bars 0-1 intro, 2 drop (the guitarist), 6 arp joins (pedalboard), 20 breakdown + riser,
+  21 second drop with the lead (AI scene), 32 final hit (outro), then the tail fades.
 """
 import sys
 import numpy as np
@@ -186,8 +186,11 @@ class Track:
             w.writeframes(pcm.tobytes())
 
 
+BEATS = 138
+ARP_BAR, BREAKDOWN_BAR, DROP2_BARS, OUTRO_BAR = 6, 20, range(21, 25), 32
+
+
 def build(style):
-    BEATS = 98
     if style == "studio":
         bpm, root = 124, 57  # A3
         prog = [(57, [57, 60, 64]), (53, [53, 57, 60]), (48, [48, 52, 55]), (55, [55, 59, 62])]  # Am F C G
@@ -207,13 +210,13 @@ def build(style):
         b0 = bar * 4
         chord_root, chord = prog[bar % 4]
         intro = bar < 2
-        breakdown = bar == 15
-        outro = bar >= 22
+        breakdown = bar == BREAKDOWN_BAR
+        outro = bar >= OUTRO_BAR
         full = not (intro or breakdown or outro)
-        drop2 = 16 <= bar < 20
+        drop2 = bar in DROP2_BARS
 
         # pads: always (longer in intro/outro)
-        if bar < 23:
+        if bar < OUTRO_BAR + 1:
             pads.pad(b0, [n + 12 for n in chord] + [chord_root], 4 if not outro else 8,
                      gain=0.16 if full else 0.22, cutoff=1200 if intro else 2400, attack=0.6 if intro else 0.08)
 
@@ -235,7 +238,7 @@ def build(style):
                     pads.bass(b0 + k * 0.5, chord_root - 24 + (12 if k % 2 else 0), 0.48, gain=0.42, cutoff=700, kind="saw")
                 for k in range(16):
                     tr.hat(b0 + k * 0.25, gain=0.05, pan=-0.3)
-            if bar >= 9:
+            if bar >= ARP_BAR:
                 for k, step in enumerate(arp_shape * 2):
                     tr.pluck(b0 + k * 0.25, chord_root + 12 + step, gain=0.11 if style == "studio" else 0.1,
                              pan=0.6 if k % 2 else -0.6, kind="saw" if style == "studio" else "square",
@@ -256,11 +259,12 @@ def build(style):
                 tr.clap(b0 + 2 + k * 0.5, gain=0.18 + 0.08 * k)  # snare roll into the drop
 
     # impacts on the big moments
-    for b in (8, 64):
+    end = OUTRO_BAR * 4
+    for b in (8, (BREAKDOWN_BAR + 1) * 4):
         tr.crash(b)
-    tr.kick(88, gain=1.1); tr.crash(88, gain=0.45)
-    tr.stab(88, [n + 12 for n in prog[0][1]] + [prog[0][0]], gain=0.35, cutoff=5000)
-    pads.pad(88, [n + 12 for n in prog[0][1]] + [prog[0][0], prog[0][0] + 24], 10, gain=0.3, cutoff=3000, attack=0.02)
+    tr.kick(end, gain=1.1); tr.crash(end, gain=0.45)
+    tr.stab(end, [n + 12 for n in prog[0][1]] + [prog[0][0]], gain=0.35, cutoff=5000)
+    pads.pad(end, [n + 12 for n in prog[0][1]] + [prog[0][0], prog[0][0] + 24], 10, gain=0.3, cutoff=3000, attack=0.02)
 
     duck = tr.sidechain(depth=0.6 if style == "studio" else 0.45)
     tr.L += pads.L * duck

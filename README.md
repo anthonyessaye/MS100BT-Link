@@ -1,6 +1,6 @@
 # MS-100BT Link
 
-**A modern editor for the Zoom MS-100BT MultiStomp, on your Mac or Android phone, over Bluetooth.**
+**A modern editor for the Zoom MS-100BT MultiStomp, on your Mac or Android phone, over Bluetooth.** Version 1.0.
 
 Zoom only made an iPhone app for this pedal, and it disappeared years ago. MS-100BT Link brings the pedal back
 to life: see your patches as a real pedalboard, turn knobs live, back up all 50 patches, install extra effects,
@@ -8,9 +8,9 @@ drive it from a MIDI footswitch, and describe a sound to an AI that builds the p
 
 ![MS-100BT Link: the pedalboard](docs/media/main.png)
 
-[![Watch the 47-second tour](docs/media/promo-poster.jpg)](docs/media/promo.mp4)
+[![Watch the tour](docs/media/promo-poster.jpg)](docs/media/promo.mp4)
 
-▶ **[Watch the 47-second tour](docs/media/promo.mp4)** (recorded with the earlier native Mac version; the app looks the same)
+▶ **[Watch the tour](docs/media/promo.mp4)** (a guitarist, a Bluetooth footswitch, the Mac and Android apps, a minute long)
 
 > **Unofficial.** Not affiliated with or endorsed by Zoom Corporation. "Zoom" and "MultiStomp" are trademarks
 > of their owners. Editing writes to your pedal, so back up first. The app never sends firmware commands.
@@ -51,7 +51,8 @@ own API key, kept in the system keychain. Nothing is saved on the pedal until yo
 ![Tone Assistant](docs/media/assistant.png)
 
 ### Stomp with any MIDI footswitch
-Connect a Bluetooth MIDI footswitch (or plug in USB), click **Learn**, and press a switch. **Stomp mode** turns effects
+Plug in a USB controller or connect a Bluetooth MIDI footswitch (on Android, **Find Bluetooth MIDI** finds paired and
+nearby ones and reconnects them next time), tap **Add switch** or **Learn**, and press a switch. **Stomp mode** turns effects
 on and off; **Patch mode** loads patches (choose per switch). Momentary and latching switches are detected
 automatically, and expression pedals can drive any knob.
 
@@ -66,23 +67,23 @@ names what gets overwritten), and import or export `.syx` patch files.
 | | |
 |---|---|
 | **macOS** | The full app, with real windows (Effects, Diagnostics), native menus and alerts. |
-| **Android** | The full app on phones and tablets: pairs with the pedal and Bluetooth MIDI controllers in the app. |
+| **Android** | The full app on phones and tablets: pairs with the pedal and Bluetooth MIDI controllers in the app. On phones, everything is one tap away in a bottom tab bar: **Board**, **Patches**, **AI**, **More**. |
 | **iPhone / iPad** | Not yet: iOS only lets apps use this pedal's Bluetooth through Apple's accessory program. |
 
 <img src="docs/media/android.png" alt="On Android" width="260">
 
 ## Install
 
-**Mac:** download the app from [Releases](../../releases/latest), unzip it, and move it to Applications. It isn't
+**Mac:** download **MS-100BT-Link-1.0-mac.zip** from [Releases](../../releases/latest), unzip it, and move the app to Applications. It isn't
 notarized (that needs a paid Apple developer account), so the first time, **right-click → Open**, or allow it in
 *System Settings → Privacy & Security*. It picks up the backups, effect library, settings and AI keys of the earlier
 native Mac version automatically.
 
-**Android:** download the `.apk` from [Releases](../../releases/latest) and open it (allow installing from your
-browser or file manager when asked).
+**Android:** download **MS-100BT-Link-1.0-android.apk** from [Releases](../../releases/latest) and open it (allow
+installing from your browser or file manager when asked).
 
 Then, on the pedal: **knob 1 → MENU → Bluetooth → PAIRING**, and in the app use **Scan** / **Pair a new pedal…**, then
-**Connect**. Tested with an MS-100BT on firmware 1.30.
+**Connect**. Requires macOS 12 or later, or Android 7 or later. Tested with an MS-100BT on firmware 1.30.
 
 ## Safety by design
 
@@ -112,8 +113,17 @@ cd apps/ms100bt_link && flutter test        # app tests
 flutter build macos                          # or: flutter build apk --release
 ```
 
-The screenshots are rendered from the app with demo data (`test_screens/readme_screenshots_test.dart`). The earlier
-native Swift Mac app, the `zoomprobe` CLI and the promo renderer are in git at the tag `native-mac-final`.
+The screenshots are rendered from the app with demo data (`test_screens/readme_screenshots_test.dart`), and the promo
+video by [promo/](promo/) (drawn frame by frame in SwiftUI, with a soundtrack synthesized from scratch). The earlier
+native Swift Mac app and the `zoomprobe` CLI are in git at the tag `native-mac-final`.
+
+## Changes
+
+**1.0**: one app for macOS and Android (Flutter, shared Dart core); real Mac windows, menus and alerts; effect
+installs with safety checks; the assistant uses installed custom effects and can point to effects you could
+download; Bluetooth MIDI controllers on Android; a bottom tab bar on phones. Settings, backups and AI keys from the
+earlier Mac app carry over.
+**0.2**: Tone Assistant. **0.1**: first Mac release.
 
 ## Credits
 
