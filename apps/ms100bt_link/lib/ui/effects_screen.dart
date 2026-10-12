@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:zoom_core/zoom_core.dart';
 
 import '../app_model.dart';
@@ -9,12 +9,15 @@ import 'widgets.dart';
 
 /// Effects on the pedal (its menu), the library, and the change plan. Port of the Mac Effects window.
 class EffectsScreen extends StatefulWidget {
-  const EffectsScreen({super.key, required this.model, required this.mgr, this.onClose});
+  const EffectsScreen({super.key, required this.model, required this.mgr, this.onClose, this.inWindow = false});
   final AppModel model;
   final EffectManager mgr;
 
   /// Set when shown as a sheet on the Mac (a Done button instead of a back arrow).
   final VoidCallback? onClose;
+
+  /// In its own window: closed with the window's close button, no Done button.
+  final bool inWindow;
 
   @override
   State<EffectsScreen> createState() => _EffectsScreenState();
@@ -61,16 +64,19 @@ class _EffectsScreenState extends State<EffectsScreen> {
           backgroundColor: AppColors.panel,
           automaticallyImplyLeading: widget.onClose == null,
           title: const Text('Effects', style: TextStyle(fontWeight: FontWeight.w800)),
-          bottom: const TabBar(
-            tabs: [
-              Tab(text: 'On the pedal'),
-              Tab(text: 'Library'),
-            ],
-          ),
+          // Mac: side-by-side panes like the native Effects window; phones: tabs.
+          bottom: isMac
+              ? null
+              : const TabBar(
+                  tabs: [
+                    Tab(text: 'On the pedal'),
+                    Tab(text: 'Library'),
+                  ],
+                ),
           actions: [
             IconButton(tooltip: 'Read the pedal', onPressed: mgr.busy == null ? mgr.readPedal : null, icon: const Icon(Icons.refresh)),
             IconButton(tooltip: 'Back up every file', onPressed: mgr.busy == null ? _backup : null, icon: const Icon(Icons.save_alt)),
-            if (widget.onClose != null) ...[
+            if (widget.onClose != null && !widget.inWindow) ...[
               TextButton(onPressed: mgr.busy == null ? widget.onClose : null, child: const Text('Done')),
               const SizedBox(width: 8),
             ],
@@ -80,12 +86,34 @@ class _EffectsScreenState extends State<EffectsScreen> {
           children: [
             if (mgr.busy != null) _progress(),
             _summary(),
-            Expanded(child: TabBarView(children: [_pedal(), _library()])),
+            Expanded(
+              child: isMac
+                  ? Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Expanded(flex: 11, child: _pane('Library', _library())),
+                        const VerticalDivider(width: 1, color: AppColors.stroke),
+                        Expanded(flex: 10, child: _pane('On the pedal', _pedal())),
+                      ],
+                    )
+                  : TabBarView(children: [_pedal(), _library()]),
+            ),
             if (mgr.hasChanges) _changeBar(),
           ],
         ),
       ),
     ),
+  );
+
+  Widget _pane(String title, Widget child) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+        child: Text(title, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+      ),
+      Expanded(child: child),
+    ],
   );
 
   Widget _progress() => Container(
@@ -448,7 +476,7 @@ class _ConfirmApplyDialogState extends State<ConfirmApplyDialog> {
         ),
         for (final p in problems) Text('• $p'),
       ] else
-        CheckboxListTile(
+        CheckboxListTile.adaptive(
           contentPadding: EdgeInsets.zero,
           value: understood,
           onChanged: (v) => setState(() => understood = v ?? false),

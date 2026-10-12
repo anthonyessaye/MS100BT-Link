@@ -1,6 +1,6 @@
 import 'dart:ui' show AppExitResponse;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:zoom_core/zoom_core.dart';
 
 import '../ai_assistant.dart';
@@ -8,6 +8,8 @@ import '../app_model.dart';
 import '../effect_manager.dart';
 import '../midi_control.dart';
 import 'assistant_screen.dart';
+import '../mac_windows.dart';
+import '../main.dart' show appShell;
 import 'diagnostics_view.dart';
 import 'dialogs.dart' as dialogs;
 import 'effect_picker.dart';
@@ -102,17 +104,31 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<bool> ensureUnlocked() => dialogs.ensureUnlocked(context, m);
   void _push(Widget screen) => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => screen));
   // On the Mac these are sheets over the main window, as in the native app; elsewhere, pages.
-  void _openEffects() => isMac
-      ? showSheet<void>(context, Builder(builder: (c) => EffectsScreen(model: m, mgr: widget.effects, onClose: () => Navigator.pop(c))))
-      : _push(EffectsScreen(model: m, mgr: widget.effects));
+  void _openEffects() {
+    if (isMac && canOpenWindows) {
+      // Its own window, like the native app's Effects window.
+      MacWindows.open(context, 'effects', title: 'Effects', size: const Size(1100, 720), minSize: const Size(980, 640),
+          builder: (close) => appShell(EffectsScreen(model: m, mgr: widget.effects, onClose: close, inWindow: true)));
+    } else if (isMac) {
+      showSheet<void>(context, Builder(builder: (c) => EffectsScreen(model: m, mgr: widget.effects, onClose: () => Navigator.pop(c))));
+    } else {
+      _push(EffectsScreen(model: m, mgr: widget.effects));
+    }
+  }
   void _openMidi() => isMac
       ? showSheet<void>(context, Builder(builder: (c) => MidiScreen(midi: widget.midi, onClose: () => Navigator.pop(c))),
           size: const Size(760, 640))
       : _push(MidiScreen(midi: widget.midi));
-  void _openDiagnostics() => isMac
-      ? showSheet<void>(context, Builder(builder: (c) => DiagnosticsView(model: m, onClose: () => Navigator.pop(c))),
-          size: const Size(900, 600))
-      : _push(Builder(builder: (c) => DiagnosticsView(model: m, onClose: () => Navigator.pop(c))));
+  void _openDiagnostics() {
+    if (isMac && canOpenWindows) {
+      MacWindows.open(context, 'diagnostics', title: 'Diagnostics', size: const Size(960, 620), minSize: const Size(860, 560),
+          builder: (close) => appShell(DiagnosticsView(model: m, onClose: close, inWindow: true)));
+    } else if (isMac) {
+      showSheet<void>(context, Builder(builder: (c) => DiagnosticsView(model: m, onClose: () => Navigator.pop(c))), size: const Size(900, 600));
+    } else {
+      _push(Builder(builder: (c) => DiagnosticsView(model: m, onClose: () => Navigator.pop(c))));
+    }
+  }
 
   void _toggle(Sidebar s) {
     if (!wide) {
@@ -820,10 +836,10 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             if (m.devices.length > 1) ...[
               const SizedBox(height: 14),
-              DropdownButton<String>(
+              PopupChoice<String?>(
+                width: 260,
                 value: m.device?.address,
-                dropdownColor: AppColors.panelRaised,
-                items: [for (final d in m.devices) DropdownMenuItem(value: d.address, child: Text(d.name))],
+                items: [for (final d in m.devices) (d.address, d.name)],
                 onChanged: (a) => setState(() => m.device = m.devices.firstWhere((d) => d.address == a)),
               ),
             ],

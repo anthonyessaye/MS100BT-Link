@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../midi_control.dart';
 import 'native_ui.dart';
@@ -31,8 +31,15 @@ class MidiScreen extends StatelessWidget {
       appBar: AppBar(
         backgroundColor: AppColors.panel,
         automaticallyImplyLeading: onClose == null,
+        centerTitle: false,
         title: const Text('MIDI Control', style: TextStyle(fontWeight: FontWeight.w800)),
         actions: [
+          if (isMac)
+            TextButton.icon(
+              onPressed: () => midi.addMapping(const MidiAction(MidiActionType.toggleEffect)),
+              icon: const Icon(Icons.add, size: 16),
+              label: const Text('Add switch'),
+            ),
           if (isMac)
             TextButton.icon(
               onPressed: NativeUI.showBluetoothMIDI,
@@ -40,20 +47,33 @@ class MidiScreen extends StatelessWidget {
               label: const Text('Connect Bluetooth MIDI…'),
             ),
           IconButton(tooltip: 'Rescan devices', onPressed: midi.refreshDevices, icon: const Icon(Icons.refresh)),
-          PopupMenuButton<String>(
-            onSelected: (_) => midi.resetDefaults(),
-            itemBuilder: (_) => const [PopupMenuItem(value: 'reset', child: Text('Reset to default mappings'))],
-          ),
+          if (isMac)
+            Builder(
+              builder: (c) => IconButton(
+                tooltip: 'More',
+                icon: const Icon(Icons.more_horiz),
+                onPressed: () async {
+                  if (await NativeUI.menu(c, const [NativeMenuItem('reset', 'Reset to Default Mappings')]) == 'reset') midi.resetDefaults();
+                },
+              ),
+            )
+          else
+            PopupMenuButton<String>(
+              onSelected: (_) => midi.resetDefaults(),
+              itemBuilder: (_) => const [PopupMenuItem(value: 'reset', child: Text('Reset to default mappings'))],
+            ),
           if (onClose != null) ...[TextButton(onPressed: onClose, child: const Text('Done')), const SizedBox(width: 8)],
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        backgroundColor: AppColors.accent,
-        foregroundColor: Colors.black,
-        onPressed: () => midi.addMapping(const MidiAction(MidiActionType.toggleEffect)),
-        icon: const Icon(Icons.add),
-        label: const Text('Add switch'),
-      ),
+      floatingActionButton: isMac
+          ? null // on the Mac, Add switch sits in the toolbar
+          : FloatingActionButton.extended(
+              backgroundColor: AppColors.accent,
+              foregroundColor: Colors.black,
+              onPressed: () => midi.addMapping(const MidiAction(MidiActionType.toggleEffect)),
+              icon: const Icon(Icons.add),
+              label: const Text('Add switch'),
+            ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(12, 12, 12, 90),
         children: [
@@ -84,7 +104,7 @@ class MidiScreen extends StatelessWidget {
                     selected: {midi.mode},
                     onSelectionChanged: (s) => midi.setMode(s.first),
                   ),
-                  SwitchListTile(
+                  SwitchListTile.adaptive(
                     contentPadding: EdgeInsets.zero,
                     value: midi.programChangeLoadsPatch,
                     onChanged: midi.setProgramChangeLoadsPatch,
@@ -125,16 +145,11 @@ class MidiScreen extends StatelessWidget {
             _picker('In Stomp mode', m.action, (a) => midi.update(m.id, (x) => x.action = a ?? x.action)),
             _picker('In Patch mode', m.patchAction, (a) => midi.update(m.id, (x) => x.patchAction = a), allowSame: true),
             Padding(
-              padding: const EdgeInsets.only(right: 8, top: 4),
-              child: DropdownButtonFormField<SwitchBehavior?>(
-                key: ValueKey('behavior${m.id}${m.behavior}'),
-                initialValue: m.behavior,
-                isExpanded: true,
-                decoration: const InputDecoration(labelText: 'Switch type', isDense: true),
-                items: [
-                  const DropdownMenuItem(value: null, child: Text('Detect on next press')),
-                  for (final b in SwitchBehavior.values) DropdownMenuItem(value: b, child: Text(b.label)),
-                ],
+              padding: const EdgeInsets.only(right: 8, top: 6),
+              child: PopupChoice<SwitchBehavior?>(
+                label: 'Switch type',
+                value: m.behavior,
+                items: [(null, 'Detect on next press'), for (final b in SwitchBehavior.values) (b, b.label)],
                 onChanged: (b) => midi.update(m.id, (x) => x.behavior = b),
               ),
             ),
@@ -145,17 +160,11 @@ class MidiScreen extends StatelessWidget {
   }
 
   Widget _picker(String label, MidiAction? value, void Function(MidiAction?) onChanged, {bool allowSame = false}) => Padding(
-    padding: const EdgeInsets.only(right: 8, top: 4),
-    child: DropdownButtonFormField<MidiAction?>(
-      key: ValueKey('$label${value?.label}'),
-      initialValue: value,
-      isExpanded: true,
-      menuMaxHeight: 420,
-      decoration: InputDecoration(labelText: label, isDense: true),
-      items: [
-        if (allowSame) const DropdownMenuItem(value: null, child: Text('Same as Stomp mode')),
-        for (final a in _actions) DropdownMenuItem(value: a, child: Text(a.label)),
-      ],
+    padding: const EdgeInsets.only(right: 8, top: 6),
+    child: PopupChoice<MidiAction?>(
+      label: label,
+      value: value,
+      items: [if (allowSame) (null, 'Same as Stomp mode'), for (final a in _actions) (a, a.label)],
       onChanged: onChanged,
     ),
   );

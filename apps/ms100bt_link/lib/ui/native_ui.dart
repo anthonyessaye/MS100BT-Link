@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 
 /// True on the Mac build, which behaves like the native Mac app (alerts, sheets, menus, window).
@@ -34,6 +34,10 @@ abstract final class NativeUI {
       'items': [for (final i in items) i.toMap()],
     });
   }
+
+  /// NSAlert with a text field. Returns the text, or null on Cancel.
+  static Future<String?> prompt(String title, {String text = '', String initial = '', String? placeholder}) =>
+      _channel.invokeMethod<String>('prompt', {'title': title, 'text': text, 'initial': initial, 'placeholder': placeholder});
 
   static Future<void> showBluetoothMIDI() => _channel.invokeMethod<void>('bluetoothMIDI');
 
@@ -68,7 +72,11 @@ Future<T?> showSheet<T>(BuildContext context, Widget child, {Size size = const S
                   border: Border.all(color: Colors.white12),
                   boxShadow: const [BoxShadow(color: Colors.black54, blurRadius: 30, offset: Offset(0, 12))],
                 ),
-                child: child,
+                child: CallbackShortcuts(
+                  // Escape cancels a sheet, as on macOS.
+                  bindings: {const SingleActivator(LogicalKeyboardKey.escape): () => Navigator.of(context).maybePop()},
+                  child: Focus(autofocus: true, child: child),
+                ),
               ),
             ),
           ),
@@ -91,4 +99,67 @@ class NativeMenuItem {
   final String id, title;
   final bool checked, enabled, separator;
   Map<String, Object> toMap() => {'id': id, 'title': title, 'checked': checked, 'enabled': enabled, 'separator': separator};
+}
+
+/// A pop-up button: shows the current choice and opens a native NSMenu (like NSPopUpButton) on the Mac,
+/// a Material dropdown elsewhere.
+class PopupChoice<T> extends StatelessWidget {
+  const PopupChoice({super.key, required this.value, required this.items, required this.onChanged, this.label, this.width});
+  final T value;
+  final List<(T, String)> items;
+  final ValueChanged<T> onChanged;
+  final String? label;
+  final double? width;
+
+  String get _current => items.where((i) => i.$1 == value).firstOrNull?.$2 ?? '—';
+
+  @override
+  Widget build(BuildContext context) {
+    if (!isMac) {
+      return SizedBox(
+        width: width,
+        child: DropdownButtonFormField<T>(
+          key: ValueKey('$label$value'),
+          initialValue: items.any((i) => i.$1 == value) ? value : null,
+          isExpanded: true,
+          menuMaxHeight: 420,
+          decoration: InputDecoration(labelText: label, isDense: true),
+          items: [for (final (v, t) in items) DropdownMenuItem(value: v, child: Text(t, overflow: TextOverflow.ellipsis))],
+          onChanged: (v) => v is T ? onChanged(v) : null,
+        ),
+      );
+    }
+    final button = Builder(
+      builder: (c) => GestureDetector(
+        onTap: () async {
+          final id = await NativeUI.menu(c, [
+            for (var i = 0; i < items.length; i++) NativeMenuItem('$i', items[i].$2, checked: items[i].$1 == value),
+          ]);
+          if (id != null) onChanged(items[int.parse(id)].$1);
+        },
+        child: Container(
+          width: width,
+          height: 24,
+          padding: const EdgeInsets.only(left: 8, right: 4),
+          decoration: BoxDecoration(
+            color: const Color(0xFF3A3A3C),
+            borderRadius: BorderRadius.circular(5),
+            border: Border.all(color: Colors.white12),
+            boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 1, offset: Offset(0, 0.5))],
+          ),
+          child: Row(mainAxisSize: width == null ? MainAxisSize.min : MainAxisSize.max, children: [
+            Flexible(child: Text(_current, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13))),
+            const SizedBox(width: 6),
+            const Icon(Icons.unfold_more, size: 14, color: Colors.white70),
+          ]),
+        ),
+      ),
+    );
+    if (label == null) return button;
+    return Row(mainAxisSize: MainAxisSize.min, children: [
+      Text('$label:', style: const TextStyle(fontSize: 13, color: Colors.white70)),
+      const SizedBox(width: 8),
+      Flexible(child: button),
+    ]);
+  }
 }

@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../app_model.dart';
 import 'native_ui.dart';
@@ -65,6 +65,7 @@ Future<bool> confirm(BuildContext context, String title, String text, {String ac
 }
 
 Future<String?> askText(BuildContext context, String title, {String initial = '', String? hint, TextInputType? keyboard}) {
+  if (isMac) return NativeUI.prompt(title, initial: initial, placeholder: hint);
   final ctrl = TextEditingController(text: initial);
   return showDialog<String>(
     context: context,

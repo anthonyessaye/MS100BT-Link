@@ -3,47 +3,43 @@ import CoreAudioKit
 import FlutterMacOS
 import IOBluetooth
 
-class MainFlutterWindow: NSWindow {
-  private var bridge: PedalBridge?
-  private var ui: UIBridge?
-
-  override func awakeFromNib() {
-    let flutterViewController = FlutterViewController()
-    self.contentViewController = flutterViewController
-
-    // Same window as the native app: hidden title bar (the top bar sits under the traffic lights),
-    // dark, 1040 × 660 minimum.
-    title = "MS-100BT Link"
-    titleVisibility = .hidden
-    titlebarAppearsTransparent = true
-    styleMask.insert(.fullSizeContentView)
-    appearance = NSAppearance(named: .darkAqua)
-    contentMinSize = NSSize(width: 1040, height: 660)
-    setContentSize(NSSize(width: 1280, height: 820))
-    center()
-    setFrameAutosaveName("MainWindow")
-
-    RegisterGeneratedPlugins(registry: flutterViewController)
-    bridge = PedalBridge(messenger: flutterViewController.engine.binaryMessenger)
-    ui = UIBridge(messenger: flutterViewController.engine.binaryMessenger, window: self)
-
-    super.awakeFromNib()
-  }
-}
-
 /// Native macOS pieces the Flutter UI asks for, so the Mac build behaves like the native app:
 /// NSAlert (with the suppression checkbox), Apple's Bluetooth MIDI window, and menu-bar commands.
 final class UIBridge: NSObject {
   private let channel: FlutterMethodChannel
-  private weak var window: NSWindow?
   private var bluetoothMIDI: CABTLEMIDIWindowController?
+  private var styled = Set<ObjectIdentifier>()
+  /// The window the user is working in (windows are created by the Flutter framework).
+  private var window: NSWindow? { NSApp.keyWindow ?? NSApp.mainWindow ?? NSApp.windows.first { $0.isVisible } }
 
-  init(messenger: FlutterBinaryMessenger, window: NSWindow) {
+  init(messenger: FlutterBinaryMessenger) {
     channel = FlutterMethodChannel(name: "ms100bt/ui", binaryMessenger: messenger)
-    self.window = window
     super.init()
     channel.setMethodCallHandler { [weak self] call, result in self?.handle(call, result) }
     DispatchQueue.main.async { self.installMenus() }
+    // Style every window the framework opens, the moment it appears.
+    for name in [NSWindow.didBecomeKeyNotification, NSWindow.didBecomeMainNotification, NSWindow.didUpdateNotification] {
+      NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] n in
+        if let w = n.object as? NSWindow { self?.style(w) }
+      }
+    }
+  }
+
+  /// Dark windows like the native app; the main window gets the hidden title bar with the top bar
+  /// under the traffic lights, and remembers its frame.
+  private func style(_ w: NSWindow) {
+    guard !styled.contains(ObjectIdentifier(w)), w.contentViewController != nil else { return }
+    styled.insert(ObjectIdentifier(w))
+    w.appearance = NSAppearance(named: .darkAqua)
+    w.tabbingMode = .disallowed
+    if w.title == "MS-100BT Link" {
+      w.titleVisibility = .hidden
+      w.titlebarAppearsTransparent = true
+      w.styleMask.insert(.fullSizeContentView)
+      w.setFrameAutosaveName("MainWindow")
+    } else {
+      w.setFrameAutosaveName("Window-\(w.title)")
+    }
   }
 
   private func handle(_ call: FlutterMethodCall, _ result: @escaping FlutterResult) {
@@ -65,6 +61,22 @@ final class UIBridge: NSObject {
         let r = a.runModal()
         result(["button": r.rawValue - NSApplication.ModalResponse.alertFirstButtonReturn.rawValue,
                 "suppressed": a.suppressionButton?.state == .on])
+      }
+    case "prompt":
+      // NSAlert with a text field (rename, tempo). Returns the text, or nil on Cancel.
+      let a = NSAlert()
+      a.messageText = args["title"] as? String ?? ""
+      a.informativeText = args["text"] as? String ?? ""
+      a.addButton(withTitle: "OK")
+      a.addButton(withTitle: "Cancel")
+      let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
+      field.stringValue = args["initial"] as? String ?? ""
+      field.placeholderString = args["placeholder"] as? String
+      a.accessoryView = field
+      DispatchQueue.main.async {
+        a.window.initialFirstResponder = field
+        let r = a.runModal()
+        result(r == .alertFirstButtonReturn ? field.stringValue : nil)
       }
     case "menu":
       // A native pop-up menu at a point in the Flutter view (top-left origin). Returns the chosen id or nil.
@@ -112,6 +124,14 @@ final class UIBridge: NSObject {
       }
     }
     rename(main)
+    // File → Close (⌘W), as in a SwiftUI app.
+    if !main.items.contains(where: { $0.submenu?.title == "File" }) {
+      let file = NSMenu(title: "File")
+      file.addItem(NSMenuItem(title: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w"))
+      let item = NSMenuItem(title: "File", action: nil, keyEquivalent: "")
+      item.submenu = file
+      main.insertItem(item, at: min(1, main.items.count))
+    }
     guard let windowMenu = main.items.first(where: { $0.submenu?.title == "Window" })?.submenu else { return }
     let at = windowMenu.items.firstIndex(where: { $0.title == "Bring All to Front" }) ?? windowMenu.items.count
     windowMenu.insertItem(NSMenuItem.separator(), at: at)
@@ -130,7 +150,6 @@ final class UIBridge: NSObject {
   }
 
   @objc private func menuCommand(_ sender: NSMenuItem) {
-    window?.makeKeyAndOrderFront(nil)
     channel.invokeMethod("menu", arguments: sender.representedObject as? String)
   }
 }
@@ -157,8 +176,13 @@ final class PedalBridge: NSObject, FlutterStreamHandler, IOBluetoothRFCOMMChanne
   private func handle(_ call: FlutterMethodCall, _ result: @escaping FlutterResult) {
     switch call.method {
     case "pairedDevices":
-      let devices = (IOBluetoothDevice.pairedDevices() as? [IOBluetoothDevice]) ?? []
-      result(devices.map { ["address": $0.addressString ?? "", "name": $0.name ?? "?"] })
+      // Off the main thread: IOBluetooth's first-use setup waits on the main queue and deadlocks
+      // when called from it at launch (seen with the multi-window, headless-engine startup).
+      DispatchQueue.global(qos: .userInitiated).async {
+        let devices = (IOBluetoothDevice.pairedDevices() as? [IOBluetoothDevice]) ?? []
+        let list = devices.map { ["address": $0.addressString ?? "", "name": $0.name ?? "?"] }
+        DispatchQueue.main.async { result(list) }
+      }
     case "connect":
       let address = (call.arguments as? [String: Any])?["address"] as? String ?? ""
       connect(address, result)

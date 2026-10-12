@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 
 import '../app_model.dart';
@@ -8,9 +8,12 @@ import 'widgets.dart';
 
 /// Developer view: connection details, identity, and the raw console. Port of DiagnosticsView.swift.
 class DiagnosticsView extends StatefulWidget {
-  const DiagnosticsView({super.key, required this.model, required this.onClose});
+  const DiagnosticsView({super.key, required this.model, required this.onClose, this.inWindow = false});
   final AppModel model;
   final VoidCallback onClose;
+
+  /// In its own window: closed with the window's close button, no Done button.
+  final bool inWindow;
 
   @override
   State<DiagnosticsView> createState() => _DiagnosticsViewState();
@@ -47,7 +50,7 @@ class _DiagnosticsViewState extends State<DiagnosticsView> {
               backgroundColor: AppColors.panel,
               automaticallyImplyLeading: false,
               title: const Text('Diagnostics', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 17)),
-              actions: [TextButton(onPressed: widget.onClose, child: const Text('Done')), const SizedBox(width: 8)],
+              actions: [if (!widget.inWindow) ...[TextButton(onPressed: widget.onClose, child: const Text('Done')), const SizedBox(width: 8)]],
             ),
             body: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
               SizedBox(

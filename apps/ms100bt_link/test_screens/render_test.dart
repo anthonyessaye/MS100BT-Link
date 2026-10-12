@@ -3,7 +3,7 @@
 //   flutter test test_screens --update-goldens
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ms100bt_link/ai_assistant.dart';
@@ -11,9 +11,11 @@ import 'package:ms100bt_link/app_model.dart';
 import 'package:ms100bt_link/effect_manager.dart';
 import 'package:ms100bt_link/midi_control.dart';
 import 'package:ms100bt_link/ui/effect_picker.dart';
+import 'package:ms100bt_link/ui/effects_screen.dart';
+import 'package:ms100bt_link/main.dart' show appTheme;
 import 'package:ms100bt_link/ui/home.dart';
+import 'package:ms100bt_link/ui/midi_screen.dart';
 import 'package:ms100bt_link/ui/native_ui.dart';
-import 'package:ms100bt_link/ui/widgets.dart';
 import 'package:zoom_core/zoom_core.dart';
 
 const fonts = '/opt/homebrew/share/flutter/bin/cache/artifacts/material_fonts';
@@ -31,12 +33,7 @@ Future<void> loadFonts() async {
 
 Widget app(Widget home) => MaterialApp(
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        brightness: Brightness.dark,
-        colorScheme: ColorScheme.fromSeed(seedColor: AppColors.accent, brightness: Brightness.dark),
-        scaffoldBackgroundColor: AppColors.background,
-        useMaterial3: true,
-      ),
+      theme: appTheme(),
       home: home,
     );
 
@@ -87,5 +84,108 @@ void main() {
     await tester.pumpWidget(app(Scaffold(body: SizedBox(width: 980, height: 660, child: EffectPicker(model: m, slot: 0)))));
     await tester.pump();
     await expectLater(find.byType(EffectPicker), matchesGoldenFile('out/picker.png'));
+  });
+
+  testWidgets('backup_patches', (tester) async {
+    debugIsMac = true;
+    tester.view.physicalSize = const Size(1280, 820);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final m = AppModel()..patch = PatchDump.decode(bourj);
+    for (var n = 0; n < 23; n++) {
+      m.slots[n] = (PatchEdit(PatchDump.decode(bourj)!)..setName(['AmerIdiot', 'Bourj', 'Clean Funk', 'LEAD 80s', 'X'][n % 5])).decoded!;
+    }
+    m.backupProgress = 23;
+    m.currentSlot = 22;
+    final fx = EffectManager(m);
+    await tester.pumpWidget(app(HomeScreen(model: m, effects: fx, ai: AIAssistant(link: m, effects: fx), midi: MidiControl(link: m))));
+    await tester.pump(const Duration(milliseconds: 500));
+    await expectLater(find.byType(HomeScreen), matchesGoldenFile('out/backup_patches.png'));
+  });
+
+  testWidgets('backup_effects', (tester) async {
+    debugIsMac = true;
+    tester.view.physicalSize = const Size(980, 640);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final m = AppModel()..patch = PatchDump.decode(bourj);
+    final fx = EffectManager(m)
+      ..busy = 'Backing up DUAL_REV.ZDL (117/176)'
+      ..progress = 117 / 176;
+    await tester.pumpWidget(app(EffectsScreen(model: m, mgr: fx, onClose: () {})));
+    await tester.pump(const Duration(milliseconds: 500));
+    await expectLater(find.byType(EffectsScreen), matchesGoldenFile('out/backup_effects.png'));
+  });
+
+  // Every MS-100BT effect in every slot position, as patches stream in during a backup.
+  for (final size in const [Size(1040, 660), Size(1280, 820)]) {
+    testWidgets('all_effects_${size.width.toInt()}', (tester) async {
+      debugIsMac = true;
+      tester.view.physicalSize = size;
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final m = AppModel()..patch = PatchDump.decode(bourj);
+      final fx = EffectManager(m);
+      await tester.pumpWidget(app(HomeScreen(model: m, effects: fx, ai: AIAssistant(link: m, effects: fx), midi: MidiControl(link: m))));
+      final ids = EffectCatalog.ms100btEffectIds.toList()..sort();
+      final problems = <String>[];
+      final where = <String>{};
+      final previous = FlutterError.onError;
+      FlutterError.onError = (d) {
+        final text = d.toString();
+        where.addAll(RegExp(r'(\w+):file:///\S*/lib/(\S+)').allMatches(text).map((x) => '${x[1]} lib/${x[2]}'));
+        previous?.call(d);
+      };
+      addTearDown(() => FlutterError.onError = previous);
+      for (var i = 0; i < ids.length; i++) {
+        final e = PatchEdit(PatchDump.decode(bourj)!)..setName(['AmerIdiot', 'WWWWWWWWWW', 'x', 'Clean Funk'][i % 4]);
+        for (var s = 0; s < 6; s++) {
+          e.setEffect(s, ids[(i + s * 17) % ids.length], on: (i + s) % 3 != 0);
+        }
+        m.patch = e.decoded;
+        m.slots[i % 50] = e.decoded!;
+        m.currentSlot = i % 50;
+        m.backupProgress = i % 50 + 1;
+        m.selectedSlot = i % 6;
+        m.notifyListeners();
+        await tester.pump(const Duration(milliseconds: 50));
+        final ex = tester.takeException();
+        if (ex != null) problems.add('${EffectCatalog.name(ids[i])} (slot ${i % 6}): $ex');
+      }
+      await tester.pump(const Duration(seconds: 1));
+      expect(problems, isEmpty, reason: 'AT ${where.join(' | ')}\n${problems.take(10).join('\n')}');
+    });
+  }
+
+  testWidgets('mac_midi', (tester) async {
+    debugIsMac = true;
+    tester.view.physicalSize = const Size(760, 640);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final m = AppModel();
+    await tester.pumpWidget(app(MidiScreen(midi: MidiControl(link: m), onClose: () {})));
+    await tester.pump(const Duration(milliseconds: 300));
+    await expectLater(find.byType(MidiScreen), matchesGoldenFile('out/mac_midi.png'));
+  });
+
+  testWidgets('mac_effects_window', (tester) async {
+    debugIsMac = true;
+    tester.view.physicalSize = const Size(1100, 720);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final m = AppModel()..patch = PatchDump.decode(bourj);
+    final index = EffectIndex([
+      EffectMenuCategory(0x01, ['COMP.ZDL', 'RACKCOMP.ZDL']),
+      EffectMenuCategory(0x03, ['BOOSTER.ZDL', 'TS_DRIVE.ZDL', 'Z_SCREAM.ZDL']),
+      EffectMenuCategory(0x08, ['DELAY.ZDL', 'TAPEECHO.ZDL']),
+      EffectMenuCategory(0x09, ['HALL.ZDL', 'ROOM.ZDL']),
+    ], 4108);
+    final fx = EffectManager(m)
+      ..state = PedalFileState(maxWriteSize: 4096, totalBytes: 4143170, freeBytes: 2100000,
+          files: [for (final n in index.allEffects) PedalFile(n, 9000), const PedalFile('FLST_SEQ.ZDT', 4108)], index: index, indexRaw: index.build())
+      ..draft = index.copy();
+    await tester.pumpWidget(app(EffectsScreen(model: m, mgr: fx, onClose: () {}, inWindow: true)));
+    await tester.pump(const Duration(milliseconds: 300));
+    await expectLater(find.byType(EffectsScreen), matchesGoldenFile('out/mac_effects_window.png'));
   });
 }

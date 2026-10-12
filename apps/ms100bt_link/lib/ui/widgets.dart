@@ -1,6 +1,6 @@
 import 'dart:math' as math;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// Colors shared with the Mac app (Controls.swift).
 abstract final class AppColors {
@@ -234,12 +234,13 @@ class MiniSwitch extends StatelessWidget {
   final bool enabled;
 
   @override
-  Widget build(BuildContext context) => SizedBox(
-        width: 88,
+  Widget build(BuildContext context) => ConstrainedBox(
+        constraints: const BoxConstraints(minWidth: 88),
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           SizedBox(
             height: 64,
-            child: Center(
+            child: FittedBox( // long option names (e.g. "Mono"/"Stereo") shrink instead of overflowing
+              fit: BoxFit.scaleDown,
               child: Opacity(
                 opacity: enabled ? 1 : 0.55,
                 child: Container(
