@@ -1,3 +1,5 @@
+import 'dart:ui' show AppExitResponse;
+
 import 'package:flutter/material.dart';
 import 'package:zoom_core/zoom_core.dart';
 
@@ -6,10 +8,12 @@ import '../app_model.dart';
 import '../effect_manager.dart';
 import '../midi_control.dart';
 import 'assistant_screen.dart';
+import 'diagnostics_view.dart';
 import 'dialogs.dart' as dialogs;
 import 'effect_picker.dart';
 import 'effects_screen.dart';
 import 'midi_screen.dart';
+import 'native_ui.dart';
 import 'patches_screen.dart';
 import 'widgets.dart';
 
@@ -39,7 +43,8 @@ class _HomeScreenState extends State<HomeScreen> {
   bool get wide => MediaQuery.sizeOf(context).width >= 760;
 
   /// Room for the full pill bar (about 1,100 px); narrower windows get the compact bar.
-  bool get wideBar => MediaQuery.sizeOf(context).width >= 1100;
+  /// The Mac always gets it (its window never goes below 1040 px, as in the native app).
+  bool get wideBar => isMac || MediaQuery.sizeOf(context).width >= 1100;
 
   @override
   void initState() {
@@ -48,10 +53,26 @@ class _HomeScreenState extends State<HomeScreen> {
     m.addListener(_followAction);
     widget.midi.requestUnlock = () async => mounted && await ensureUnlocked();
     widget.midi.start();
+    if (isMac) {
+      NativeUI.onMenu((id) => switch (id) {
+            'effects' => _openEffects(),
+            'midi' => _openMidi(),
+            'diagnostics' => _openDiagnostics(),
+            _ => null,
+          });
+    }
+    // Quitting leaves edit mode (0x51) and closes the link first, as the native app does.
+    _exit = AppLifecycleListener(onExitRequested: () async {
+      await m.disconnect();
+      return AppExitResponse.exit;
+    });
   }
+
+  late final AppLifecycleListener _exit;
 
   @override
   void dispose() {
+    _exit.dispose();
     m.removeListener(_followAction);
     super.dispose();
   }
@@ -80,8 +101,18 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<bool> ensureUnlocked() => dialogs.ensureUnlocked(context, m);
   void _push(Widget screen) => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => screen));
-  void _openEffects() => _push(EffectsScreen(model: m, mgr: widget.effects));
-  void _openMidi() => _push(MidiScreen(midi: widget.midi));
+  // On the Mac these are sheets over the main window, as in the native app; elsewhere, pages.
+  void _openEffects() => isMac
+      ? showSheet<void>(context, Builder(builder: (c) => EffectsScreen(model: m, mgr: widget.effects, onClose: () => Navigator.pop(c))))
+      : _push(EffectsScreen(model: m, mgr: widget.effects));
+  void _openMidi() => isMac
+      ? showSheet<void>(context, Builder(builder: (c) => MidiScreen(midi: widget.midi, onClose: () => Navigator.pop(c))),
+          size: const Size(760, 640))
+      : _push(MidiScreen(midi: widget.midi));
+  void _openDiagnostics() => isMac
+      ? showSheet<void>(context, Builder(builder: (c) => DiagnosticsView(model: m, onClose: () => Navigator.pop(c))),
+          size: const Size(900, 600))
+      : _push(Builder(builder: (c) => DiagnosticsView(model: m, onClose: () => Navigator.pop(c))));
 
   void _toggle(Sidebar s) {
     if (!wide) {
@@ -144,13 +175,13 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _topBar() => Container(
     height: 56,
     color: AppColors.panel.withValues(alpha: 0.6),
-    padding: const EdgeInsets.symmetric(horizontal: 16),
+    padding: EdgeInsets.only(left: isMac ? 80 : 16, right: 16), // room for the window buttons on the Mac
     child: Row(
       children: [
         _connectionPill(),
-        const Spacer(),
-        _patchSwitcher(),
-        const Spacer(),
+        const SizedBox(width: 14),
+        Expanded(child: Center(child: _patchSwitcher())),
+        const SizedBox(width: 14),
         if (m.patch?.tempo != null) ...[
           Pill(icon: Icons.av_timer, label: '${m.patch!.tempo}', tooltip: 'Patch tempo (BPM): click to change', onTap: _tempo),
           const SizedBox(width: 10),
@@ -224,46 +255,42 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _connectionPill({bool compact = false}) {
     final name = m.device?.name ?? 'No pedal';
     final status = m.busy ?? (m.isConnected ? 'Connected · live' : (m.device == null ? 'Pair your pedal' : 'Tap to connect'));
-    return PopupMenuButton<String>(
-      tooltip: 'Connection',
-      onSelected: (v) async {
-        switch (v) {
-          case 'connect':
-            await m.connect();
-          case 'disconnect':
-            await m.disconnect();
-          case 'reload':
-            await m.resumeAfterFileSystem();
-          case 'screen':
-            m.setShowOnPedalScreen(!m.showOnPedalScreen);
-          case 'refresh':
-            await m.refreshDevices();
-          case 'notes':
-            _platformNotes();
-          default:
-            if (v.startsWith('dev:')) m.device = m.devices.firstWhere((d) => d.address == v.substring(4));
-            setState(() {});
-        }
-      },
-      itemBuilder: (_) => [
-        if (m.isConnected) ...[
-          CheckedPopupMenuItem(
-            value: 'screen',
-            checked: m.showOnPedalScreen,
-            child: const Text("Show changed effect on the pedal's screen"),
-          ),
-          const PopupMenuItem(value: 'reload', child: Text('Reload from pedal')),
-          const PopupMenuItem(value: 'disconnect', child: Text('Disconnect')),
-        ] else ...[
-          const PopupMenuItem(value: 'connect', child: Text('Connect')),
-          for (final d in m.devices)
-            CheckedPopupMenuItem(value: 'dev:${d.address}', checked: m.device?.address == d.address, child: Text(d.name)),
-          const PopupMenuItem(value: 'refresh', child: Text('Refresh paired devices')),
-        ],
-        const PopupMenuDivider(),
-        const PopupMenuItem(value: 'notes', child: Text('Diagnostics…')),
+    final items = [
+      if (m.isConnected) ...[
+        NativeMenuItem('screen', "Show changed effect on the pedal's screen", checked: m.showOnPedalScreen),
+        const NativeMenuItem('reload', 'Reload from pedal'),
+        const NativeMenuItem('disconnect', 'Disconnect'),
+      ] else ...[
+        NativeMenuItem('connect', 'Connect', enabled: m.device != null && m.busy == null),
+        for (final d in m.devices) NativeMenuItem('dev:${d.address}', d.name, checked: m.device?.address == d.address),
+        const NativeMenuItem('refresh', 'Refresh paired devices'),
       ],
-      child: Container(
+      const NativeMenuItem.separator(),
+      const NativeMenuItem('notes', 'Diagnostics…'),
+    ];
+    Future<void> run(String? v) async {
+      switch (v) {
+        case null:
+          return;
+        case 'connect':
+          await m.connect();
+        case 'disconnect':
+          await m.disconnect();
+        case 'reload':
+          await m.resumeAfterFileSystem();
+        case 'screen':
+          m.setShowOnPedalScreen(!m.showOnPedalScreen);
+        case 'refresh':
+          await m.refreshDevices();
+        case 'notes':
+          _openDiagnostics();
+        default:
+          if (v.startsWith('dev:')) m.device = m.devices.firstWhere((d) => d.address == v.substring(4));
+          setState(() {});
+      }
+    }
+
+    final pill = Container(
         padding: EdgeInsets.symmetric(horizontal: compact ? 10 : 12, vertical: compact ? 10 : 5),
         decoration: const ShapeDecoration(color: AppColors.panelRaised, shape: StadiumBorder()),
         child: Row(
@@ -283,7 +310,22 @@ class _HomeScreenState extends State<HomeScreen> {
             ],
           ],
         ),
-      ),
+      );
+    // On the Mac: a native NSMenu, as in the native app. Elsewhere: a Material popup with the same items.
+    if (isMac) {
+      return Builder(builder: (c) => GestureDetector(onTap: () async => run(await NativeUI.menu(c, items)), child: pill));
+    }
+    return PopupMenuButton<String>(
+      tooltip: 'Connection',
+      onSelected: run,
+      itemBuilder: (_) => [
+        for (final i in items)
+          if (i.separator)
+            const PopupMenuDivider()
+          else
+            CheckedPopupMenuItem(value: i.id, checked: i.checked, enabled: i.enabled, child: Text(i.title)),
+      ],
+      child: pill,
     );
   }
 
@@ -802,20 +844,6 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         ),
       ),
-    ),
-  );
-
-  void _platformNotes() => showDialog<void>(
-    context: context,
-    builder: (c) => AlertDialog(
-      title: const Text('Diagnostics'),
-      content: SingleChildScrollView(
-        child: SelectableText(
-          m.diagnostics.isEmpty ? 'No platform notes.' : m.diagnostics.entries.map((e) => '${e.key}: ${e.value}').join('\n'),
-          style: const TextStyle(fontFamily: 'Menlo', fontSize: 12),
-        ),
-      ),
-      actions: [TextButton(onPressed: () => Navigator.pop(c), child: const Text('Close'))],
     ),
   );
 

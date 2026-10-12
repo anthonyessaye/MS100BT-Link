@@ -1,12 +1,16 @@
 import 'package:flutter/material.dart';
 
 import '../midi_control.dart';
+import 'native_ui.dart';
 import 'widgets.dart';
 
 /// MIDI controller mappings: Stomp/Patch modes, Learn, switch type. Port of the Mac MIDISettingsView.
 class MidiScreen extends StatelessWidget {
-  const MidiScreen({super.key, required this.midi});
+  const MidiScreen({super.key, required this.midi, this.onClose});
   final MidiControl midi;
+
+  /// Set when shown as a sheet on the Mac (a Done button instead of a back arrow).
+  final VoidCallback? onClose;
 
   static final _actions = <MidiAction>[
     for (var i = 0; i < 6; i++) MidiAction(MidiActionType.toggleEffect, slot: i),
@@ -21,40 +25,55 @@ class MidiScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => ListenableBuilder(
-        listenable: midi,
-        builder: (context, _) => Scaffold(
-          backgroundColor: AppColors.background,
-          appBar: AppBar(
-            backgroundColor: AppColors.panel,
-            title: const Text('MIDI control', style: TextStyle(fontWeight: FontWeight.w800)),
-            actions: [
-              IconButton(tooltip: 'Rescan devices', onPressed: midi.refreshDevices, icon: const Icon(Icons.refresh)),
-              PopupMenuButton<String>(
-                onSelected: (_) => midi.resetDefaults(),
-                itemBuilder: (_) => const [PopupMenuItem(value: 'reset', child: Text('Reset to default mappings'))],
-              ),
-            ],
+    listenable: midi,
+    builder: (context, _) => Scaffold(
+      backgroundColor: AppColors.background,
+      appBar: AppBar(
+        backgroundColor: AppColors.panel,
+        automaticallyImplyLeading: onClose == null,
+        title: const Text('MIDI Control', style: TextStyle(fontWeight: FontWeight.w800)),
+        actions: [
+          if (isMac)
+            TextButton.icon(
+              onPressed: NativeUI.showBluetoothMIDI,
+              icon: const Icon(Icons.bluetooth, size: 16),
+              label: const Text('Connect Bluetooth MIDI…'),
+            ),
+          IconButton(tooltip: 'Rescan devices', onPressed: midi.refreshDevices, icon: const Icon(Icons.refresh)),
+          PopupMenuButton<String>(
+            onSelected: (_) => midi.resetDefaults(),
+            itemBuilder: (_) => const [PopupMenuItem(value: 'reset', child: Text('Reset to default mappings'))],
           ),
-          floatingActionButton: FloatingActionButton.extended(
-            backgroundColor: AppColors.accent,
-            foregroundColor: Colors.black,
-            onPressed: () => midi.addMapping(const MidiAction(MidiActionType.toggleEffect)),
-            icon: const Icon(Icons.add),
-            label: const Text('Add switch'),
-          ),
-          body: ListView(padding: const EdgeInsets.fromLTRB(12, 12, 12, 90), children: [
-            Card(
-              color: AppColors.panel,
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          if (onClose != null) ...[TextButton(onPressed: onClose, child: const Text('Done')), const SizedBox(width: 8)],
+        ],
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        backgroundColor: AppColors.accent,
+        foregroundColor: Colors.black,
+        onPressed: () => midi.addMapping(const MidiAction(MidiActionType.toggleEffect)),
+        icon: const Icon(Icons.add),
+        label: const Text('Add switch'),
+      ),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(12, 12, 12, 90),
+        children: [
+          Card(
+            color: AppColors.panel,
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
                   Text(
                     midi.devices.isEmpty
                         ? 'No MIDI devices. Connect a controller (USB, or Bluetooth MIDI paired in the system settings).'
                         : 'Devices: ${midi.devices.map((d) => '${d.name}${d.connected ? '' : ' (not connected)'}').join(', ')}',
                   ),
                   const SizedBox(height: 4),
-                  Text('Last message: ${midi.lastMessage ?? '—'}', style: const TextStyle(color: AppColors.dim, fontFamily: 'monospace', fontSize: 12)),
+                  Text(
+                    'Last message: ${midi.lastMessage ?? '—'}',
+                    style: const TextStyle(color: AppColors.dim, fontFamily: 'monospace', fontSize: 12),
+                  ),
                   if (midi.status != null) Text(midi.status!, style: const TextStyle(color: AppColors.accent)),
                   const SizedBox(height: 10),
                   SegmentedButton<ControlMode>(
@@ -72,13 +91,15 @@ class MidiScreen extends StatelessWidget {
                     title: const Text('Program Change loads the patch'),
                     subtitle: const Text('PC 0–49 loads patch 01–50 (unless a switch is mapped to it).'),
                   ),
-                ]),
+                ],
               ),
             ),
-            for (final m in midi.mappings) _row(context, m),
-          ]),
-        ),
-      );
+          ),
+          for (final m in midi.mappings) _row(context, m),
+        ],
+      ),
+    ),
+  );
 
   Widget _row(BuildContext context, MidiMapping m) {
     final learning = midi.learning == m.id;
@@ -86,49 +107,56 @@ class MidiScreen extends StatelessWidget {
       color: learning ? AppColors.accent.withValues(alpha: 0.18) : AppColors.panel,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Row(children: [
-            Expanded(
-              child: Text(learning ? 'Press the switch on your controller…' : (m.trigger?.label ?? 'Not assigned'),
-                  style: TextStyle(fontWeight: FontWeight.w700, color: learning ? AppColors.accent : null)),
-            ),
-            TextButton(onPressed: () => midi.learn(m.id), child: Text(learning ? 'Cancel' : 'Learn')),
-            IconButton(onPressed: () => midi.remove(m.id), icon: const Icon(Icons.delete_outline, size: 20)),
-          ]),
-          _picker('In Stomp mode', m.action, (a) => midi.update(m.id, (x) => x.action = a ?? x.action)),
-          _picker('In Patch mode', m.patchAction, (a) => midi.update(m.id, (x) => x.patchAction = a), allowSame: true),
-          Padding(
-            padding: const EdgeInsets.only(right: 8, top: 4),
-            child: DropdownButtonFormField<SwitchBehavior?>(
-              key: ValueKey('behavior${m.id}${m.behavior}'),
-              initialValue: m.behavior,
-              isExpanded: true,
-              decoration: const InputDecoration(labelText: 'Switch type', isDense: true),
-              items: [
-                const DropdownMenuItem(value: null, child: Text('Detect on next press')),
-                for (final b in SwitchBehavior.values) DropdownMenuItem(value: b, child: Text(b.label)),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    learning ? 'Press the switch on your controller…' : (m.trigger?.label ?? 'Not assigned'),
+                    style: TextStyle(fontWeight: FontWeight.w700, color: learning ? AppColors.accent : null),
+                  ),
+                ),
+                TextButton(onPressed: () => midi.learn(m.id), child: Text(learning ? 'Cancel' : 'Learn')),
+                IconButton(onPressed: () => midi.remove(m.id), icon: const Icon(Icons.delete_outline, size: 20)),
               ],
-              onChanged: (b) => midi.update(m.id, (x) => x.behavior = b),
             ),
-          ),
-        ]),
+            _picker('In Stomp mode', m.action, (a) => midi.update(m.id, (x) => x.action = a ?? x.action)),
+            _picker('In Patch mode', m.patchAction, (a) => midi.update(m.id, (x) => x.patchAction = a), allowSame: true),
+            Padding(
+              padding: const EdgeInsets.only(right: 8, top: 4),
+              child: DropdownButtonFormField<SwitchBehavior?>(
+                key: ValueKey('behavior${m.id}${m.behavior}'),
+                initialValue: m.behavior,
+                isExpanded: true,
+                decoration: const InputDecoration(labelText: 'Switch type', isDense: true),
+                items: [
+                  const DropdownMenuItem(value: null, child: Text('Detect on next press')),
+                  for (final b in SwitchBehavior.values) DropdownMenuItem(value: b, child: Text(b.label)),
+                ],
+                onChanged: (b) => midi.update(m.id, (x) => x.behavior = b),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 
   Widget _picker(String label, MidiAction? value, void Function(MidiAction?) onChanged, {bool allowSame = false}) => Padding(
-        padding: const EdgeInsets.only(right: 8, top: 4),
-        child: DropdownButtonFormField<MidiAction?>(
-          key: ValueKey('$label${value?.label}'),
-          initialValue: value,
-          isExpanded: true,
-          menuMaxHeight: 420,
-          decoration: InputDecoration(labelText: label, isDense: true),
-          items: [
-            if (allowSame) const DropdownMenuItem(value: null, child: Text('Same as Stomp mode')),
-            for (final a in _actions) DropdownMenuItem(value: a, child: Text(a.label)),
-          ],
-          onChanged: onChanged,
-        ),
-      );
+    padding: const EdgeInsets.only(right: 8, top: 4),
+    child: DropdownButtonFormField<MidiAction?>(
+      key: ValueKey('$label${value?.label}'),
+      initialValue: value,
+      isExpanded: true,
+      menuMaxHeight: 420,
+      decoration: InputDecoration(labelText: label, isDense: true),
+      items: [
+        if (allowSame) const DropdownMenuItem(value: null, child: Text('Same as Stomp mode')),
+        for (final a in _actions) DropdownMenuItem(value: a, child: Text(a.label)),
+      ],
+      onChanged: onChanged,
+    ),
+  );
 }

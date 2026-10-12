@@ -1,20 +1,137 @@
 import Cocoa
+import CoreAudioKit
 import FlutterMacOS
 import IOBluetooth
 
 class MainFlutterWindow: NSWindow {
   private var bridge: PedalBridge?
+  private var ui: UIBridge?
 
   override func awakeFromNib() {
     let flutterViewController = FlutterViewController()
-    let windowFrame = self.frame
     self.contentViewController = flutterViewController
-    self.setFrame(windowFrame, display: true)
+
+    // Same window as the native app: hidden title bar (the top bar sits under the traffic lights),
+    // dark, 1040 × 660 minimum.
+    title = "MS-100BT Link"
+    titleVisibility = .hidden
+    titlebarAppearsTransparent = true
+    styleMask.insert(.fullSizeContentView)
+    appearance = NSAppearance(named: .darkAqua)
+    contentMinSize = NSSize(width: 1040, height: 660)
+    setContentSize(NSSize(width: 1280, height: 820))
+    center()
+    setFrameAutosaveName("MainWindow")
 
     RegisterGeneratedPlugins(registry: flutterViewController)
     bridge = PedalBridge(messenger: flutterViewController.engine.binaryMessenger)
+    ui = UIBridge(messenger: flutterViewController.engine.binaryMessenger, window: self)
 
     super.awakeFromNib()
+  }
+}
+
+/// Native macOS pieces the Flutter UI asks for, so the Mac build behaves like the native app:
+/// NSAlert (with the suppression checkbox), Apple's Bluetooth MIDI window, and menu-bar commands.
+final class UIBridge: NSObject {
+  private let channel: FlutterMethodChannel
+  private weak var window: NSWindow?
+  private var bluetoothMIDI: CABTLEMIDIWindowController?
+
+  init(messenger: FlutterBinaryMessenger, window: NSWindow) {
+    channel = FlutterMethodChannel(name: "ms100bt/ui", binaryMessenger: messenger)
+    self.window = window
+    super.init()
+    channel.setMethodCallHandler { [weak self] call, result in self?.handle(call, result) }
+    DispatchQueue.main.async { self.installMenus() }
+  }
+
+  private func handle(_ call: FlutterMethodCall, _ result: @escaping FlutterResult) {
+    let args = call.arguments as? [String: Any] ?? [:]
+    switch call.method {
+    case "alert":
+      let a = NSAlert()
+      a.messageText = args["title"] as? String ?? ""
+      a.informativeText = args["text"] as? String ?? ""
+      a.alertStyle = (args["critical"] as? Bool) == true ? .critical : .warning
+      for b in args["buttons"] as? [String] ?? ["OK"] { a.addButton(withTitle: b) }
+      if let s = args["suppression"] as? String {
+        a.showsSuppressionButton = true
+        a.suppressionButton?.title = s
+        a.suppressionButton?.state = (args["suppressed"] as? Bool) == true ? .on : .off
+      }
+      // Deferred so the method call returns to the run loop first; runModal then blocks like the native app.
+      DispatchQueue.main.async {
+        let r = a.runModal()
+        result(["button": r.rawValue - NSApplication.ModalResponse.alertFirstButtonReturn.rawValue,
+                "suppressed": a.suppressionButton?.state == .on])
+      }
+    case "menu":
+      // A native pop-up menu at a point in the Flutter view (top-left origin). Returns the chosen id or nil.
+      guard let view = window?.contentView else { return result(nil) }
+      let menu = NSMenu()
+      menu.autoenablesItems = false
+      var chosen: String?
+      final class Target: NSObject { var pick: (String) -> Void = { _ in }; @objc func act(_ s: NSMenuItem) { pick(s.representedObject as? String ?? "") } }
+      let target = Target()
+      target.pick = { chosen = $0 }
+      for i in args["items"] as? [[String: Any]] ?? [] {
+        if i["separator"] as? Bool == true { menu.addItem(.separator()); continue }
+        let item = NSMenuItem(title: i["title"] as? String ?? "", action: #selector(Target.act(_:)), keyEquivalent: "")
+        item.target = target
+        item.representedObject = i["id"] as? String
+        item.isEnabled = i["enabled"] as? Bool ?? true
+        item.state = (i["checked"] as? Bool) == true ? .on : .off
+        menu.addItem(item)
+      }
+      let x = args["x"] as? Double ?? 0, y = args["y"] as? Double ?? 0
+      let point = NSPoint(x: x, y: view.isFlipped ? y : view.bounds.height - y)
+      DispatchQueue.main.async {
+        menu.popUp(positioning: nil, at: point, in: view) // returns when the menu closes
+        withExtendedLifetime(target) { result(chosen) }
+      }
+    case "bluetoothMIDI":
+      if bluetoothMIDI == nil { bluetoothMIDI = CABTLEMIDIWindowController() }
+      bluetoothMIDI?.showWindow(nil)
+      bluetoothMIDI?.window?.makeKeyAndOrderFront(nil)
+      result(nil)
+    default:
+      result(FlutterMethodNotImplemented)
+    }
+  }
+
+  /// App name in the app menu, plus the native app's commands (Window → Diagnostics ⌥⌘D) and
+  /// Effects / MIDI windows.
+  private func installMenus() {
+    guard let main = NSApp.mainMenu else { return }
+    func rename(_ menu: NSMenu) {
+      menu.title = menu.title.replacingOccurrences(of: "APP_NAME", with: "MS-100BT Link")
+      for item in menu.items {
+        item.title = item.title.replacingOccurrences(of: "APP_NAME", with: "MS-100BT Link")
+        if let sub = item.submenu { rename(sub) }
+      }
+    }
+    rename(main)
+    guard let windowMenu = main.items.first(where: { $0.submenu?.title == "Window" })?.submenu else { return }
+    let at = windowMenu.items.firstIndex(where: { $0.title == "Bring All to Front" }) ?? windowMenu.items.count
+    windowMenu.insertItem(NSMenuItem.separator(), at: at)
+    let items: [(String, String, NSEvent.ModifierFlags, String)] = [
+      ("Effects", "e", [.command, .shift], "effects"),
+      ("MIDI Control", "m", [.command, .shift], "midi"),
+      ("Diagnostics", "d", [.command, .option], "diagnostics"),
+    ]
+    for (i, (title, key, mods, id)) in items.enumerated() {
+      let item = NSMenuItem(title: title, action: #selector(menuCommand(_:)), keyEquivalent: key)
+      item.keyEquivalentModifierMask = mods
+      item.representedObject = id
+      item.target = self
+      windowMenu.insertItem(item, at: at + 1 + i)
+    }
+  }
+
+  @objc private func menuCommand(_ sender: NSMenuItem) {
+    window?.makeKeyAndOrderFront(nil)
+    channel.invokeMethod("menu", arguments: sender.representedObject as? String)
   }
 }
 

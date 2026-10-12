@@ -10,7 +10,8 @@ import 'storage.dart';
 /// App state: connection, current patch, editing lock, live updates, patch backups. Mirrors the Mac app's LinkModel.
 class AppModel extends ChangeNotifier {
   AppModel({this.prefs}) {
-    editingEnabled = prefs?.getBool('editingUnlocked') ?? false;
+    rememberUnlock = prefs?.getBool('rememberUnlock') ?? true;
+    editingEnabled = rememberUnlock && (prefs?.getBool('editingUnlocked') ?? false);
     showOnPedalScreen = prefs?.getBool('showOnPedalScreen') ?? true;
     PatchLibrary.latest().then((l) {
       library = l;
@@ -27,6 +28,9 @@ class AppModel extends ChangeNotifier {
   int? currentSlot;
   int selectedSlot = 0;
   bool editingEnabled = false;
+
+  /// Keep editing unlocked when the app restarts (the checkbox in the unlock alert).
+  bool rememberUnlock = true;
   bool liveUpdates = true;
 
   /// Turning an effect on/off also moves the pedal's own display to it.
@@ -145,8 +149,14 @@ class AppModel extends ChangeNotifier {
   void setEditing(bool on) {
     editingEnabled = on;
     session?.writesEnabled = on;
-    prefs?.setBool('editingUnlocked', on); // remembered between launches, as on the Mac
+    prefs?.setBool('editingUnlocked', on && rememberUnlock); // remembered between launches only if asked
     notifyListeners();
+  }
+
+  void setRememberUnlock(bool on) {
+    rememberUnlock = on;
+    prefs?.setBool('rememberUnlock', on);
+    prefs?.setBool('editingUnlocked', on && editingEnabled);
   }
 
   void setShowOnPedalScreen(bool on) {

@@ -1,3 +1,4 @@
+// ignore_for_file: invalid_use_of_visible_for_testing_member
 // Renders the main screens to PNGs for a visual check (not part of the normal test run):
 //   flutter test test_screens --update-goldens
 import 'dart:io';
@@ -11,6 +12,7 @@ import 'package:ms100bt_link/effect_manager.dart';
 import 'package:ms100bt_link/midi_control.dart';
 import 'package:ms100bt_link/ui/effect_picker.dart';
 import 'package:ms100bt_link/ui/home.dart';
+import 'package:ms100bt_link/ui/native_ui.dart';
 import 'package:ms100bt_link/ui/widgets.dart';
 import 'package:zoom_core/zoom_core.dart';
 
@@ -41,8 +43,13 @@ Widget app(Widget home) => MaterialApp(
 void main() {
   setUpAll(loadFonts);
 
-  for (final (name, size) in const [('home_wide', Size(1280, 800)), ('home_phone', Size(390, 844))]) {
+  for (final (name, size, mac) in const [
+    ('home_wide', Size(1280, 800), true),
+    ('home_mac_min', Size(1040, 660), true),
+    ('home_phone', Size(390, 844), false),
+  ]) {
     testWidgets(name, (tester) async {
+      debugIsMac = mac;
       tester.view.physicalSize = size;
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
@@ -58,6 +65,7 @@ void main() {
 
   for (final (name, size) in const [('zsyn_1280x720', Size(1280, 720)), ('zsyn_1000x640', Size(1000, 640))]) {
     testWidgets(name, (tester) async {
+      debugIsMac = true;
       tester.view.physicalSize = size;
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);

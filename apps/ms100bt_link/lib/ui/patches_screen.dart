@@ -8,6 +8,7 @@ import 'package:zoom_core/zoom_core.dart';
 import '../app_model.dart';
 import '../storage.dart';
 import 'dialogs.dart';
+import 'native_ui.dart';
 import 'widgets.dart';
 
 /// Patches as a page (phones). On wide screens [PatchList] is docked as the right sidebar, as on the Mac.
@@ -203,25 +204,7 @@ class _PatchListState extends State<PatchList> {
                 onPressed: m.canInteract && m.backupProgress == null ? _backup : null,
                 child: const Text('Back up all'),
               ),
-              PopupMenuButton<int>(
-                enabled: m.canInteract && m.library != null,
-                tooltip: 'Store the current patch into a memory slot',
-                onSelected: _store,
-                itemBuilder: (_) => [
-                  for (var n = 0; n < Allowlist.patchSlots; n++)
-                    PopupMenuItem(
-                      value: n,
-                      child: Text(
-                        '${(n + 1).toString().padLeft(2, '0')}  ${(m.slots[n] ?? m.library?.patches[n])?.name ?? '—'}',
-                        style: const TextStyle(fontFamily: 'Menlo', fontSize: 13),
-                      ),
-                    ),
-                ],
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                  child: Text('Save to… ▾', style: TextStyle(color: m.canInteract && m.library != null ? AppColors.text : AppColors.dim)),
-                ),
-              ),
+              _saveTo(),
             ],
           ),
         ),
@@ -240,6 +223,40 @@ class _PatchListState extends State<PatchList> {
       ],
     ),
   );
+
+  String _slotTitle(int n) => '${(n + 1).toString().padLeft(2, '0')}  ${(m.slots[n] ?? m.library?.patches[n])?.name ?? '—'}';
+
+  /// "Save to…": a native NSMenu on the Mac (as in the native app), a Material popup elsewhere.
+  Widget _saveTo() {
+    final enabled = m.canInteract && m.library != null;
+    final label = Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      child: Text('Save to… ▾', style: TextStyle(color: enabled ? AppColors.text : AppColors.dim)),
+    );
+    if (isMac) {
+      return Builder(
+        builder: (c) => GestureDetector(
+          onTap: !enabled
+              ? null
+              : () async {
+                  final id = await NativeUI.menu(c, [for (var n = 0; n < Allowlist.patchSlots; n++) NativeMenuItem('$n', _slotTitle(n))]);
+                  if (id != null) await _store(int.parse(id));
+                },
+          child: label,
+        ),
+      );
+    }
+    return PopupMenuButton<int>(
+      enabled: enabled,
+      tooltip: 'Store the current patch into a memory slot',
+      onSelected: _store,
+      itemBuilder: (_) => [
+        for (var n = 0; n < Allowlist.patchSlots; n++)
+          PopupMenuItem(value: n, child: Text(_slotTitle(n), style: const TextStyle(fontFamily: 'Menlo', fontSize: 13))),
+      ],
+      child: label,
+    );
+  }
 
   Future<void> _backup() async {
     if (!await ensureUnlocked(context, m) || !mounted) return;

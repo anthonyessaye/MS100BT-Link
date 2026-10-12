@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:zoom_core/zoom_core.dart';
 
 import '../app_model.dart';
+import 'native_ui.dart';
 import 'widgets.dart';
 
 /// Effect picker: categories, then effects drawn as mini stompboxes. Port of EffectLibrarySheet.
@@ -15,6 +16,7 @@ class EffectPicker extends StatefulWidget {
 
   static Future<int?> show(BuildContext context, AppModel model, int slot) {
     final wide = MediaQuery.sizeOf(context).width >= 760;
+    if (isMac) return showSheet<int>(context, EffectPicker(model: model, slot: slot), size: const Size(980, 660));
     if (wide) {
       return showDialog<int>(
         context: context,

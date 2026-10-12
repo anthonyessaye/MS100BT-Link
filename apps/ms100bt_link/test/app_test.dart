@@ -8,16 +8,33 @@ import 'package:ms100bt_link/ai_assistant.dart';
 import 'package:ms100bt_link/ui/assistant_screen.dart';
 import 'package:ms100bt_link/ui/effects_screen.dart';
 import 'package:ms100bt_link/ui/midi_screen.dart';
+import 'package:ms100bt_link/ui/native_ui.dart';
 import 'package:ms100bt_link/ui/patches_screen.dart';
 import 'package:zoom_core/zoom_core.dart';
 
 void main() {
+  setUp(() => debugIsMac = false); // phone/tablet behaviour unless a test says otherwise
+
   testWidgets('starts on the connect screen without a pedal', (tester) async {
     await tester.pumpWidget(const MS100BTLinkApp());
     await tester.pump();
     expect(find.text('Pair your MS-100BT'), findsOneWidget); // no paired device in tests
     expect(find.byIcon(Icons.lock), findsOneWidget); // compact bar at 800 px: lock + overflow menu
-    expect(find.text('Patches'), findsOneWidget); // docked Patches sidebar, as on the Mac
+    expect(find.text('Patches'), findsOneWidget); // docked Patches sidebar
+  });
+
+  // The 1040 × 660 minimum is checked with real fonts in test_screens (the test font's glyphs are wider).
+  testWidgets('Mac: full pill bar in the default window', (tester) async {
+    debugIsMac = true;
+    tester.view.physicalSize = const Size(1280, 820);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(const MS100BTLinkApp());
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+    for (final t in ['Locked', 'Effects', 'AI', 'MIDI', 'STOMP']) {
+      expect(find.text(t), findsOneWidget, reason: t);
+    }
   });
 
   group('MIDI', () {
