@@ -13,3 +13,8 @@ MS100BTLink/build/
 # promo build output and renderer build products
 promo/out/
 promo/renderer/.build/
+
+# Dart / Flutter
+.dart_tool/
+packages/*/pubspec.lock
+build/

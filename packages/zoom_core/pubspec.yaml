@@ -1,0 +1,13 @@
+name: zoom_core
+description: >-
+  Protocol core for the Zoom MS-100BT MultiStomp: message builders with a hard
+  allowlist, SysEx framing, patch decoding/encoding and the effect catalog.
+  Pure Dart (no Flutter), shared by every MS-100BT Link platform.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ^3.5.0
+
+dev_dependencies:
+  test: ^1.25.0
