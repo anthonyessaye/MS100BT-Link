@@ -16,6 +16,7 @@ class AppModel extends ChangeNotifier {
     rememberUnlock = prefs?.getBool('rememberUnlock') ?? true;
     editingEnabled = rememberUnlock && (prefs?.getBool('editingUnlocked') ?? false);
     showOnPedalScreen = prefs?.getBool('showOnPedalScreen') ?? true;
+    liveUpdates = prefs?.getBool('liveUpdates') ?? true;
     PatchLibrary.latest().then((l) {
       library = l;
       notifyListeners();
@@ -222,6 +223,20 @@ class AppModel extends ChangeNotifier {
     if (s != null) {
       patch = await s.readPatch() ?? patch;
       if (liveUpdates) await _startLive();
+    }
+    notifyListeners();
+  }
+
+  /// Live updates: hold edit mode and re-read the patch every 2 s (off: read only after your own changes).
+  Future<void> setLiveUpdates(bool on) async {
+    liveUpdates = on;
+    prefs?.setBool('liveUpdates', on);
+    if (session == null) return notifyListeners();
+    if (on) {
+      await _startLive();
+    } else {
+      _poll?.cancel();
+      await session?.leaveEditMode();
     }
     notifyListeners();
   }

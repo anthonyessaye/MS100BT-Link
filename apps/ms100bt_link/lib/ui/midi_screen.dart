@@ -225,6 +225,15 @@ class _MidiScreenState extends State<MidiScreen> {
                   ),
                 ),
                 TextButton(onPressed: () => midi.learn(m.id), child: Text(learning ? 'Cancel' : 'Learn')),
+                if (m.trigger != null && !learning)
+                  IconButton(
+                    tooltip: 'Clear assignment',
+                    onPressed: () => midi.update(m.id, (x) {
+                      x.trigger = null;
+                      x.behavior = null;
+                    }),
+                    icon: const Icon(Icons.link_off, size: 20),
+                  ),
                 IconButton(onPressed: () => midi.remove(m.id), icon: const Icon(Icons.delete_outline, size: 20)),
               ],
             ),

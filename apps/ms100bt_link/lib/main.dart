@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'ai_assistant.dart';
 import 'app_model.dart';
 import 'effect_manager.dart';
+import 'legacy_mac.dart';
 import 'mac_windows.dart';
 import 'midi_control.dart';
 import 'ui/home.dart';
@@ -19,6 +20,7 @@ Future<void> main() async {
   try {
     prefs = await SharedPreferences.getInstance();
   } catch (_) {} // settings are then not remembered; everything else works
+  if (isMac && prefs != null) await LegacyMac.migrate(prefs); // settings, MIDI and AI keys from the native app
   if (isMac && canOpenWindows) {
     // The Mac build: real windows (main, Effects, Diagnostics) sharing one set of models.
     final models = AppModels(prefs);

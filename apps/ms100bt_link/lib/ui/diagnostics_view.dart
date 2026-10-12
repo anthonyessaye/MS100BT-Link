@@ -1,9 +1,12 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/services.dart';
 
 import '../app_model.dart';
+import '../storage.dart';
 import 'widgets.dart';
 
 /// Developer view: connection details, identity, and the raw console. Port of DiagnosticsView.swift.
@@ -110,6 +113,7 @@ class _DiagnosticsViewState extends State<DiagnosticsView> {
                         onPressed: log.isEmpty ? null : () => Clipboard.setData(ClipboardData(text: log.join('\n'))),
                         child: const Text('Copy'),
                       ),
+                      TextButton(onPressed: log.isEmpty ? null : () => _export(log), child: const Text('Export Log…')),
                     ]),
                   ),
                   Expanded(
@@ -137,6 +141,18 @@ class _DiagnosticsViewState extends State<DiagnosticsView> {
           );
         },
       );
+
+  Future<void> _export(List<String> log) async {
+    final name = 'ms100bt-${DateTime.now().toIso8601String().replaceAll(':', '-').split('.').first}.log';
+    try {
+      final loc = await getSaveLocation(suggestedName: name);
+      if (loc == null) return;
+      await File(loc.path).writeAsString('${log.join('\n')}\n');
+    } on UnimplementedError {
+      final dir = await AppDirs.sub('Logs'); // Android: no save panel
+      await File('${dir.path}/$name').writeAsString('${log.join('\n')}\n');
+    }
+  }
 
   Widget _panel(String title, List<Widget> children) => Container(
         margin: const EdgeInsets.only(bottom: 16),

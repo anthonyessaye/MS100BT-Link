@@ -280,6 +280,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final status = m.busy ?? (m.isConnected ? 'Connected · live' : (m.device == null ? 'Pair your pedal' : 'Tap to connect'));
     final items = [
       if (m.isConnected) ...[
+        NativeMenuItem('live', 'Live updates', checked: m.liveUpdates),
         NativeMenuItem('screen', "Show changed effect on the pedal's screen", checked: m.showOnPedalScreen),
         const NativeMenuItem('reload', 'Reload from pedal'),
         const NativeMenuItem('disconnect', 'Disconnect'),
@@ -287,6 +288,7 @@ class _HomeScreenState extends State<HomeScreen> {
         NativeMenuItem('connect', 'Connect', enabled: m.device != null && m.busy == null),
         for (final d in m.devices) NativeMenuItem('dev:${d.address}', d.name, checked: m.device?.address == d.address),
         const NativeMenuItem('refresh', 'Refresh paired devices'),
+        if (canScan) const NativeMenuItem('pair', 'Pair a new pedal…'),
       ],
       const NativeMenuItem.separator(),
       const NativeMenuItem('notes', 'Diagnostics…'),
@@ -303,6 +305,10 @@ class _HomeScreenState extends State<HomeScreen> {
           await m.resumeAfterFileSystem();
         case 'screen':
           m.setShowOnPedalScreen(!m.showOnPedalScreen);
+        case 'live':
+          await m.setLiveUpdates(!m.liveUpdates);
+        case 'pair':
+          await m.scanForPedals(); // results appear on the connect screen
         case 'refresh':
           await m.refreshDevices();
         case 'notes':
@@ -878,8 +884,8 @@ class _HomeScreenState extends State<HomeScreen> {
     ),
   );
 
-  /// Android can find and pair the pedal in the app; other platforms pair in system settings.
-  bool get canScan => !isMac && Theme.of(context).platform == TargetPlatform.android;
+  /// Android and the Mac can find and pair the pedal in the app; iOS can't (MFi accessory).
+  bool get canScan => isMac || Theme.of(context).platform == TargetPlatform.android;
 
   Widget _bluetoothProblem(BluetoothProblem p) {
     final (text, button) = switch (p) {

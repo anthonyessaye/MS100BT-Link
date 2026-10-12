@@ -68,7 +68,10 @@ class AIAssistant extends ChangeNotifier {
   final AppModel link;
   final EffectManager effects;
   final SharedPreferences? prefs;
-  static const _keys = FlutterSecureStorage();
+  /// API keys: Android Keystore / iOS Keychain; on the Mac the login keychain (like the native app).
+  /// The data-protection keychain would need a signed team entitlement this app doesn't have.
+  static const keys = FlutterSecureStorage(mOptions: MacOsOptions(usesDataProtectionKeychain: false));
+  static const _keys = keys;
 
   final List<ChatItem> items = [];
   final Map<int, Proposal> proposals = {};

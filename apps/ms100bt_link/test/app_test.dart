@@ -2,6 +2,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ms100bt_link/app_model.dart';
 import 'package:ms100bt_link/effect_manager.dart';
+import 'package:ms100bt_link/legacy_mac.dart';
 import 'package:ms100bt_link/main.dart';
 import 'package:ms100bt_link/midi_control.dart';
 import 'package:ms100bt_link/ai_assistant.dart';
@@ -158,6 +159,18 @@ void main() {
     await tester.pumpAndSettle();
     expect(midi.mappings.length, before + 1);
     expect(find.text('Press the switch on your controller…'), findsWidgets);
+  });
+
+  test('native Mac app MIDI mappings convert (real export: 8 latching switches)', () {
+    const native = r'''[{"trigger":{"channel":1,"kind":"cc","number":80},"action":{"toggleEffect":{"slot":0}},"id":"C82ED464-7ABF-453E-A145-781A24940FB4","patchAction":{"selectPatch":{"_0":0}},"behavior":"latching"},{"trigger":{"channel":1,"kind":"cc","number":81},"action":{"toggleEffect":{"slot":1}},"id":"AA738C92-E02E-4684-9823-9FB197CCFB57","patchAction":{"selectPatch":{"_0":1}},"behavior":"latching"},{"trigger":{"channel":1,"kind":"cc","number":82},"action":{"toggleEffect":{"slot":2}},"id":"C1347E8A-D1B9-42D1-81AD-D8459F1957A3","patchAction":{"selectPatch":{"_0":2}},"behavior":"latching"},{"trigger":{"channel":1,"kind":"cc","number":83},"action":{"toggleEffect":{"slot":3}},"id":"8878A468-0293-4F5F-8C71-08742EBBC2E6","patchAction":{"selectPatch":{"_0":3}},"behavior":"latching"},{"trigger":{"channel":1,"kind":"cc","number":84},"action":{"toggleEffect":{"slot":4}},"id":"6A4AFFC7-4F6D-477F-B09D-35164E5093DA","patchAction":{"selectPatch":{"_0":4}},"behavior":"latching"},{"trigger":{"channel":1,"kind":"cc","number":85},"action":{"toggleEffect":{"slot":5}},"id":"D95CEB0F-9682-4F69-A9AB-A56027EBE6F4","patchAction":{"selectPatch":{"_0":5}},"behavior":"latching"},{"trigger":{"channel":1,"kind":"cc","number":86},"action":{"previousPatch":{}},"id":"4744663A-C0DE-4251-9952-611F1C247C6E","behavior":"latching"},{"trigger":{"channel":1,"kind":"cc","number":87},"action":{"nextPatch":{}},"id":"CD5AF8A3-7A17-42FE-AF35-0A5AB8B1FBB3","behavior":"latching"}]''';
+    final m = LegacyMac.convertMappings(native);
+    expect(m.length, 8);
+    expect(m.first.trigger?.label, 'CC 80 · ch 1');
+    expect(m.first.action, const MidiAction(MidiActionType.toggleEffect, slot: 0));
+    expect(m.first.patchAction, const MidiAction(MidiActionType.selectPatch, slot: 0));
+    expect(m.every((x) => x.behavior == SwitchBehavior.latching), isTrue);
+    expect(m.map((x) => x.action.type), containsAll([MidiActionType.nextPatch, MidiActionType.previousPatch]));
+    expect(LegacyMac.convertMappings('not json'), isEmpty);
   });
 
   test('a not-installed effect can never be placed in a proposal', () {

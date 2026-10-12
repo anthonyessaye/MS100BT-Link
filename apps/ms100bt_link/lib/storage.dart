@@ -7,7 +7,18 @@ import 'package:zoom_core/zoom_core.dart';
 abstract final class AppDirs {
   static Directory? _root;
 
-  static Future<Directory> root() async => _root ??= await getApplicationSupportDirectory();
+  /// On the Mac, the same folder the native app used (~/Library/Application Support/MS100BTLink), so
+  /// existing patch backups, effect backups and the effect library carry over; elsewhere the app's own.
+  static Future<Directory> root() async {
+    if (_root != null) return _root!;
+    final own = await getApplicationSupportDirectory();
+    if (Platform.isMacOS) {
+      final shared = Directory('${own.parent.path}/MS100BTLink');
+      await shared.create(recursive: true);
+      return _root = shared;
+    }
+    return _root = own;
+  }
   static Future<Directory> sub(String name) async {
     final d = Directory('${(await root()).path}/$name');
     await d.create(recursive: true);

@@ -102,6 +102,28 @@ final class UIBridge: NSObject {
         menu.popUp(positioning: nil, at: point, in: view) // returns when the menu closes
         withExtendedLifetime(target) { result(chosen) }
       }
+    case "legacySettings":
+      // One-time move from the native Swift app (same bundle ID, so the same defaults domain).
+      let d = UserDefaults.standard
+      var out: [String: Any] = [:]
+      for k in ["rememberUnlock", "editingUnlocked", "midiMode", "midiPCLoadsPatch", "showOnPedalScreen", "aiProvider", "aiAutoTry",
+                "aiModel.anthropic", "aiModel.openai", "aiModel.compatible",
+                "aiBaseURL.anthropic", "aiBaseURL.openai", "aiBaseURL.compatible"] {
+        if let v = d.object(forKey: k), v is String || v is NSNumber { out[k] = v }
+      }
+      if let data = d.data(forKey: "midiMappings"), let json = String(data: data, encoding: .utf8) { out["midiMappings"] = json }
+      result(out)
+    case "legacyKey":
+      // The native app's AI keys (Keychain service com.anthonyessaye.ms100bt.ai, account = provider).
+      let q: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: "com.anthonyessaye.ms100bt.ai",
+                              kSecAttrAccount as String: args["account"] as? String ?? "", kSecReturnData as String: true,
+                              kSecMatchLimit as String: kSecMatchLimitOne]
+      var item: AnyObject?
+      if SecItemCopyMatching(q as CFDictionary, &item) == errSecSuccess, let data = item as? Data {
+        result(String(data: data, encoding: .utf8))
+      } else {
+        result(nil)
+      }
     case "bluetoothMIDI":
       if bluetoothMIDI == nil { bluetoothMIDI = CABTLEMIDIWindowController() }
       bluetoothMIDI?.showWindow(nil)
@@ -183,6 +205,28 @@ final class PedalBridge: NSObject, FlutterStreamHandler, IOBluetoothRFCOMMChanne
         let list = devices.map { ["address": $0.addressString ?? "", "name": $0.name ?? "?"] }
         DispatchQueue.main.async { result(list) }
       }
+    case "scan":
+      // Classic inquiry, 12 s (the pedal must be in pairing mode), as in the native app.
+      let waiter = InquiryWaiter { devices in
+        result(devices.map { ["address": $0.addressString ?? "", "name": $0.name ?? $0.addressString ?? "?", "paired": $0.isPaired()] })
+      }
+      guard let inq = IOBluetoothDeviceInquiry(delegate: waiter) else { return waiter.finish() }
+      waiter.inquiry = inq
+      inq.inquiryLength = 12
+      inq.updateNewDeviceNames = true
+      if inq.start() != kIOReturnSuccess { waiter.finish() }
+    case "pair":
+      let address = (call.arguments as? [String: Any])?["address"] as? String ?? ""
+      guard let d = IOBluetoothDevice(addressString: address) else { return result(false) }
+      if d.isPaired() { return result(true) }
+      let waiter = PairWaiter(pin: "0000") { status in result(status == kIOReturnSuccess) }
+      guard let p = IOBluetoothDevicePair(device: d) else { return waiter.finish(kIOReturnError) }
+      waiter.pair = p
+      p.delegate = waiter
+      let r = p.start()
+      if r != kIOReturnSuccess { waiter.finish(r) }
+    case "ensureScanPermission":
+      result(true) // macOS asks for Bluetooth access itself on first use
     case "connect":
       let address = (call.arguments as? [String: Any])?["address"] as? String ?? ""
       connect(address, result)
@@ -267,5 +311,38 @@ final class PedalBridge: NSObject, FlutterStreamHandler, IOBluetoothRFCOMMChanne
 
   func rfcommChannelWriteComplete(_ rfcommChannel: IOBluetoothRFCOMMChannel!, refcon: UnsafeMutableRawPointer!, status error: IOReturn) {
     refcon?.deallocate()
+  }
+}
+
+// Callback adapters for inquiry and pairing (each answers exactly once; ported from the native app).
+private final class InquiryWaiter: NSObject, IOBluetoothDeviceInquiryDelegate {
+  private var done: (([IOBluetoothDevice]) -> Void)?
+  private var selfRef: InquiryWaiter?
+  var inquiry: IOBluetoothDeviceInquiry?
+  init(_ done: @escaping ([IOBluetoothDevice]) -> Void) { self.done = done; super.init(); selfRef = self }
+  func deviceInquiryComplete(_ sender: IOBluetoothDeviceInquiry!, error: IOReturn, aborted: Bool) { finish() }
+  func finish() {
+    done?((inquiry?.foundDevices() as? [IOBluetoothDevice]) ?? [])
+    done = nil; inquiry = nil; selfRef = nil
+  }
+}
+
+private final class PairWaiter: NSObject, IOBluetoothDevicePairDelegate {
+  private var done: ((IOReturn) -> Void)?
+  private var selfRef: PairWaiter?
+  private let pin: String
+  var pair: IOBluetoothDevicePair?
+  init(pin: String, _ done: @escaping (IOReturn) -> Void) { self.pin = pin; self.done = done; super.init(); selfRef = self }
+  func devicePairingPINCodeRequest(_ sender: Any!) {
+    var code = BluetoothPINCode()
+    let digits = Array(pin.utf8.prefix(16))
+    withUnsafeMutableBytes(of: &code.data) { buf in for (i, b) in digits.enumerated() { buf[i] = b } }
+    pair?.replyPINCode(digits.count, pinCode: &code)
+  }
+  func devicePairingUserConfirmationRequest(_ sender: Any!, numericValue: BluetoothNumericValue) { pair?.replyUserConfirmation(true) }
+  func devicePairingFinished(_ sender: Any!, error: IOReturn) { finish(error) }
+  func finish(_ r: IOReturn) {
+    done?(r)
+    done = nil; pair = nil; selfRef = nil
   }
 }
