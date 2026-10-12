@@ -1,4 +1,4 @@
-// Port of MS100BTLink/Sources/ZoomCore/EffectCatalog.swift (data in catalog_data.dart).
+// The effect catalog (data in catalog_data.dart). Originally ported from the Swift ZoomCore (tag native-mac-final).
 
 import 'dart:convert';
 

@@ -1,6 +1,5 @@
 /// Protocol core for the Zoom MS-100BT, shared by every MS-100BT Link platform.
-/// Ported from the Swift `ZoomCore` (MS100BTLink/Sources/ZoomCore) and tested against the same
-/// real pedal captures.
+/// Shared by every platform build of the app; tested against real pedal captures.
 library;
 
 export 'src/effect_catalog.dart';

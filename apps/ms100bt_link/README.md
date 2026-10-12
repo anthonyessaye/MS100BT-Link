@@ -37,5 +37,5 @@ and fails on any layout overflow, including a pass over every MS-100BT effect.
 
 ## Icons
 
-Generated from the native app's icon drawing: `MS100BTLink/Support/icon/make-icon.swift`
-(`mac`, `square` for iOS and Android legacy icons, `foreground` for Android adaptive icons).
+Drawn by `tool/make-icon.swift` (`swift tool/make-icon.swift out.png mac|square|foreground`)
+(`mac` for macOS, `square` for iOS and Android legacy icons, `foreground` for Android adaptive icons).

@@ -2,9 +2,9 @@
 
 ## zoom-explorer
 
-`Sources/ZoomCore/EffectCatalog.swift` is generated from `public/zoom-effect-mappings-msog.json` in
-https://github.com/thammer/zoom-explorer. The effect-ID bit layout in `PatchDump` follows its
-`ZoomPatch.readMSPatch`.
+The effect catalog (`packages/zoom_core/lib/src/catalog_data.dart`) is generated from
+`public/zoom-effect-mappings-msog.json` in https://github.com/thammer/zoom-explorer. The effect-ID bit
+layout in `PatchDump` follows its `ZoomPatch.readMSPatch`.
 
 ```
 MIT License
@@ -33,8 +33,8 @@ SOFTWARE.
 ## zoom-ms100bt-bluetooth
 
 The pedal file-system protocol, effect-file (.ZDL) and effect-menu (FLST_SEQ.ZDT) formats, the change-plan
-safety rules and the effect library sources (`Sources/ZoomCore/EffectFiles.swift`, `PedalFileSystem.swift`,
-`EffectLibrary.swift`) are ported from https://github.com/lopezchau/zoom-ms100bt-bluetooth, verified there on an
+safety rules and the effect library sources (`packages/zoom_core/lib/src/effect_files.dart`,
+`pedal_file_system.dart`, `effect_library.dart`) are ported from https://github.com/lopezchau/zoom-ms100bt-bluetooth, verified there on an
 MS-100BT.
 
 ```

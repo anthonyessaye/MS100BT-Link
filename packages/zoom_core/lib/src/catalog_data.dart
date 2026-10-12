@@ -1,4 +1,5 @@
-// Generated from MS100BTLink/Sources/ZoomCore/EffectCatalog*.swift. Do not edit by hand.
+// Generated from zoom-explorer's effect mappings (see THIRD_PARTY_NOTICES.md), via the former Swift catalog
+// (tag native-mac-final). Do not edit by hand.
 // Effect data from zoom-explorer (https://github.com/thammer/zoom-explorer), MIT, (c) 2024-2025 Thomas Hammer.
 // Format: {"<id hex>": [name, [[paramName, [segment...], defaultRaw]...]]}; segment = [start, count] or "text".
 

@@ -100,6 +100,14 @@ class AIAssistant extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// README screenshots: shows the chat without a real key; never calls a provider.
+  @visibleForTesting
+  void debugShowAsConfigured() {
+    _apiKey = 'demo';
+    keyLoaded = true;
+    notifyListeners();
+  }
+
   bool get hasKey => _apiKey?.isNotEmpty == true;
   bool get isConfigured => model.trim().isNotEmpty && (!provider.needsKey || hasKey);
 

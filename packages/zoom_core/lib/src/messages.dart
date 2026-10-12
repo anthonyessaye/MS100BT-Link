@@ -1,4 +1,4 @@
-// Port of MS100BTLink/Sources/ZoomCore/Messages.swift. Keep the two in sync.
+// The allowlist and message builders: the single gate for every byte sent to the pedal (see docs/protocol.md).
 
 import 'effect_files.dart';
 import 'patch_dump.dart';

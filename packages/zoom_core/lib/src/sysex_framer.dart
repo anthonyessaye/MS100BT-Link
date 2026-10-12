@@ -1,4 +1,4 @@
-// Port of MS100BTLink/Sources/ZoomCore/SysExFramer.swift.
+// SysEx framing for the pedal's byte stream (originally ported from the Swift ZoomCore, tag native-mac-final).
 
 /// One complete MIDI message pulled out of the byte stream.
 sealed class MidiEvent {

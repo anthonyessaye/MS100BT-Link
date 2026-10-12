@@ -4,8 +4,6 @@ vendor/
 logs/
 # build output
 .build/
-MS100BTLink/.build/
-MS100BTLink/build/
 .swiftpm/
 .DS_Store
 *.xcuserstate

@@ -1,4 +1,4 @@
-// Parity tests with MS100BTLink/Tests/ZoomCoreTests (same real pedal capture, same expectations).
+// Core tests against a real pedal capture (carried over from the former Swift ZoomCoreTests, tag native-mac-final).
 import 'package:test/test.dart';
 import 'package:zoom_core/zoom_core.dart';
 

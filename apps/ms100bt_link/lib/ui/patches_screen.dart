@@ -231,7 +231,10 @@ class _PatchListState extends State<PatchList> {
     final enabled = m.canInteract && m.library != null;
     final label = Padding(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      child: Text('Save to… ▾', style: TextStyle(color: enabled ? AppColors.text : AppColors.dim)),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Text('Save to…', style: TextStyle(color: enabled ? AppColors.text : AppColors.dim)),
+        Icon(Icons.arrow_drop_down, size: 18, color: enabled ? AppColors.text : AppColors.dim),
+      ]),
     );
     if (isMac) {
       return Builder(

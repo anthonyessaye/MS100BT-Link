@@ -119,7 +119,7 @@ class _MidiScreenState extends State<MidiScreen> {
                         const SizedBox(height: 4),
                         Text(
                           'Last message: ${midi.lastMessage ?? '—'}',
-                          style: const TextStyle(color: AppColors.dim, fontFamily: 'monospace', fontSize: 12),
+                          style: const TextStyle(color: AppColors.dim, fontFamily: 'monospace', fontFamilyFallback: ['Menlo'], fontSize: 12),
                         ),
                         if (midi.status != null) Text(midi.status!, style: const TextStyle(color: AppColors.accent)),
                         if (midi.canScanBluetooth) ...[

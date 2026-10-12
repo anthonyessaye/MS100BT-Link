@@ -1,19 +1,19 @@
 # MS-100BT Link
 
-**A modern editor for the Zoom MS-100BT MultiStomp, on your Mac, over Bluetooth.**
+**A modern editor for the Zoom MS-100BT MultiStomp, on your Mac or Android phone, over Bluetooth.**
 
 Zoom only made an iPhone app for this pedal, and it disappeared years ago. MS-100BT Link brings the pedal back
-to life: see your patches as a real pedalboard, turn knobs live, back up all 50 patches, drive it from a MIDI
-footswitch, and describe a sound to an AI that builds the patch for you.
+to life: see your patches as a real pedalboard, turn knobs live, back up all 50 patches, install extra effects,
+drive it from a MIDI footswitch, and describe a sound to an AI that builds the patch for you.
 
 ![MS-100BT Link: the pedalboard](docs/media/main.png)
 
 [![Watch the 47-second tour](docs/media/promo-poster.jpg)](docs/media/promo.mp4)
 
-▶ **[Watch the 47-second tour](docs/media/promo.mp4)**
+▶ **[Watch the 47-second tour](docs/media/promo.mp4)** (recorded with the earlier native Mac version; the app looks the same)
 
 > **Unofficial.** Not affiliated with or endorsed by Zoom Corporation. "Zoom" and "MultiStomp" are trademarks
-> of their owners. Editing writes to your pedal, so back up first. The app never sends firmware or file-system commands.
+> of their owners. Editing writes to your pedal, so back up first. The app never sends firmware commands.
 
 ---
 
@@ -23,7 +23,7 @@ footswitch, and describe a sound to an AI that builds the patch for you.
 Your patch is laid out as a signal chain: **IN → six stompboxes → OUT**. Each effect is drawn as a pedal in its
 category's color, with an LED and a footswitch. Effects that are off lift off the cable and fade out. Click any pedal to
 open it large, with knobs you drag up and down (double-click resets to the default) and switches for two-way settings.
-The pedal's own screen follows along when you switch effects from the Mac.
+The pedal's own screen follows along when you switch effects from the app.
 
 ### Live editing, both ways
 Every change plays on the pedal instantly. Change something on the pedal itself and the app updates too (live updates
@@ -36,43 +36,65 @@ name *or* knob ("tone", "decay").
 
 ![Effect library](docs/media/effect-library.png)
 
+### More effects on the pedal
+The **Effects** window installs extra effects: stock effects from other Zoom MultiStomps and community-made ones,
+downloaded from their authors. Every change is checked against the rules learned on real pedals, needs a full backup
+first and an explicit risk confirmation, saves copies of everything it changes, and reads each file back.
+
 ### Describe a sound, get a patch
-The **Tone Assistant** turns words into patches: *"Edge-style dotted-eighth delay with a little shimmer"*. It looks up the
+The **Tone Assistant** turns words into patches: *"A warm blues crunch with a touch of room reverb"*. It looks up the
 pedal's real effects and allowed knob values, proposes a patch as a card, and you click **Try on pedal** to hear it.
-"A bit darker" refines it. It works with **Claude**, **ChatGPT**, or any **OpenAI-compatible** service (Ollama, LM Studio,
-OpenRouter) using your own API key, which is stored in the macOS Keychain. Nothing is saved on the pedal until you save it.
+"A bit darker" refines it. Patches only use effects already on your pedal; it may suggest others you could install.
+It works with **Claude**, **ChatGPT**, or any **OpenAI-compatible** service (Ollama, LM Studio, OpenRouter) using your
+own API key, kept in the system keychain. Nothing is saved on the pedal until you save it.
 
 ![Tone Assistant](docs/media/assistant.png)
 
 ### Stomp with any MIDI footswitch
-Pair a Bluetooth MIDI footswitch right from the app (or plug in USB), click **Learn**, and press a switch.
-**Stomp mode** turns effects on and off; **Patch mode** loads patches (choose per switch). Momentary and latching
-switches are detected automatically, and expression pedals can drive any knob.
+Connect a Bluetooth MIDI footswitch (or plug in USB), click **Learn**, and press a switch. **Stomp mode** turns effects
+on and off; **Patch mode** loads patches (choose per switch). Momentary and latching switches are detected
+automatically, and expression pedals can drive any knob.
 
 ![MIDI control](docs/media/midi.png)
 
 ### Your patches, safe
-**Back up all 50** patches to your Mac, load any patch, save edits into a slot (only after a backup, with a confirmation
-that names what gets overwritten), and import or export `.syx` patch files.
+**Back up all 50** patches, load any patch, save edits into a slot (only after a backup, with a confirmation that
+names what gets overwritten), and import or export `.syx` patch files.
+
+## Platforms
+
+| | |
+|---|---|
+| **macOS** | The full app, with real windows (Effects, Diagnostics), native menus and alerts. |
+| **Android** | The full app on phones and tablets: pairs with the pedal and Bluetooth MIDI controllers in the app. |
+| **iPhone / iPad** | Not yet: iOS only lets apps use this pedal's Bluetooth through Apple's accessory program. |
+
+<img src="docs/media/android.png" alt="On Android" width="260">
 
 ## Install
 
-1. Download **MS-100BT-Link-v0.2.zip** from [Releases](../../releases/latest), unzip it, and move the app to Applications.
-2. The app isn't notarized (that needs a paid Apple developer account), so the first time, **right-click → Open**,
-   or allow it in *System Settings → Privacy & Security*.
-3. On the pedal: **knob 1 → MENU → Bluetooth → PAIRING**. Then click **Connect** in the app and allow Bluetooth access.
+**Mac:** download the app from [Releases](../../releases/latest), unzip it, and move it to Applications. It isn't
+notarized (that needs a paid Apple developer account), so the first time, **right-click → Open**, or allow it in
+*System Settings → Privacy & Security*. It picks up the backups, effect library, settings and AI keys of the earlier
+native Mac version automatically.
 
-Requires macOS 14 or later. Tested with an MS-100BT on firmware 1.30.
+**Android:** download the `.apk` from [Releases](../../releases/latest) and open it (allow installing from your
+browser or file manager when asked).
+
+Then, on the pedal: **knob 1 → MENU → Bluetooth → PAIRING**, and in the app use **Scan** / **Pair a new pedal…**, then
+**Connect**. Tested with an MS-100BT on firmware 1.30.
 
 ## Safety by design
 
-- **A hard allowlist.** Every byte sent to the pedal passes an exact-shape allowlist in the transport layer: identity,
-  patch read, edit mode, patch select, parameter edit, a validated 146-byte patch, and store. Firmware and file-system
-  commands are blocked outright.
+- **A hard allowlist.** Every byte sent to the pedal passes an exact-shape allowlist, in the shared core and again in
+  each platform's Bluetooth layer. Firmware and updater commands are blocked outright. The table is in
+  [docs/protocol.md](docs/protocol.md).
 - **Validated patches.** A patch is only sent if every effect is known and every knob value is in range, and the app
   reads it back to confirm.
 - **An editing lock.** Changing the pedal needs an explicit unlock with a warning. Saving to a slot needs a backup of
   that slot and a confirmation.
+- **Guarded effect installs.** File changes need a full backup, pass every rule known to keep the pedal safe, and need
+  a risk confirmation; the old effect menu is restored if writing the new one fails.
 - **The AI can't touch bytes.** The assistant works through typed tools and only *proposes*; you try and save.
 
 How the protocol was worked out, and every finding verified on real hardware:
@@ -80,26 +102,25 @@ How the protocol was worked out, and every finding verified on real hardware:
 
 ## Build from source
 
+The app is Flutter (`apps/ms100bt_link`) on a shared, pure-Dart protocol core (`packages/zoom_core`). It builds with
+Flutter's `main` channel and the windowing feature (real Mac windows); see
+[apps/ms100bt_link/README.md](apps/ms100bt_link/README.md).
+
 ```bash
-cd MS100BTLink
-swift test                 # protocol, codec, allowlist, assistant tests
-./scripts/make-apps.sh     # build/MS-100BT Link.app and build/zoomprobe.app
+cd packages/zoom_core && dart test          # protocol, codec, allowlist, file system, assistant
+cd apps/ms100bt_link && flutter test        # app tests
+flutter build macos                          # or: flutter build apk --release
 ```
 
-Developer notes (allowlist table, the read-only `zoomprobe` CLI, MIDI, AI internals) are in
-[MS100BTLink/README.md](MS100BTLink/README.md). The screenshots are rendered by the app itself
-(`MS100BTLinkApp --screenshots docs/media`), and the promo video by [promo/](promo/): the frames come from the app's
-own drawing code and the soundtrack is synthesized from scratch.
-
-## Roadmap
-
-- **More platforms:** Android phones and tablets, plus iPhone/iPad where Apple's accessory rules allow, built with Flutter on a shared core.
-- **An effect library to download from**, with the AI able to suggest effects from it (see the project issues).
+The screenshots are rendered from the app with demo data (`test_screens/readme_screenshots_test.dart`). The earlier
+native Swift Mac app, the `zoomprobe` CLI and the promo renderer are in git at the tag `native-mac-final`.
 
 ## Credits
 
-- Effect names and parameter tables: [zoom-explorer](https://github.com/thammer/zoom-explorer) by Thomas Hammer (MIT);
-  see [THIRD_PARTY_NOTICES.md](MS100BTLink/THIRD_PARTY_NOTICES.md).
+- Effect names and parameter tables: [zoom-explorer](https://github.com/thammer/zoom-explorer) by Thomas Hammer (MIT).
+- Pedal file system, effect files and the safety rules for installing effects:
+  [zoom-ms100bt-bluetooth](https://github.com/lopezchau/zoom-ms100bt-bluetooth) by lopezchau (MIT).
+- See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 - MultiStomp message reference: [zoom-ms-utility](https://github.com/multistomp/zoom-ms-utility) (g200kg).
 
 ## License

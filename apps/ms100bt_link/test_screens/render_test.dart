@@ -29,6 +29,12 @@ Future<void> loadFonts() async {
   await roboto.load();
   final icons = FontLoader('MaterialIcons')..addFont(File('$fonts/MaterialIcons-Regular.otf').readAsBytes().then((b) => b.buffer.asByteData()));
   await icons.load();
+  // The Mac's monospace font (slot numbers); a .ttc's first face is Menlo Regular.
+  final menlo = File('/System/Library/Fonts/Menlo.ttc');
+  if (menlo.existsSync()) {
+    final mono = FontLoader('Menlo')..addFont(menlo.readAsBytes().then((b) => b.buffer.asByteData()));
+    await mono.load();
+  }
 }
 
 Widget app(Widget home) => MaterialApp(

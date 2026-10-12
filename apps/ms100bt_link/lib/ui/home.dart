@@ -26,11 +26,13 @@ enum Sidebar { patches, assistant }
 /// stage, the signal chain, a status line, and Patches / AI docked on the right. Phones get the same
 /// pieces in a compact bar, with Patches and AI as pages.
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key, required this.model, required this.effects, required this.ai, required this.midi});
+  const HomeScreen({super.key, required this.model, required this.effects, required this.ai, required this.midi,
+      this.initialSidebar = Sidebar.patches});
   final AppModel model;
   final EffectManager effects;
   final AIAssistant ai;
   final MidiControl midi;
+  final Sidebar? initialSidebar;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -38,7 +40,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   AppModel get m => widget.model;
-  Sidebar? sidebar = Sidebar.patches;
+  late Sidebar? sidebar = widget.initialSidebar;
   List<String>? _lastChain;
   String? _lastName;
 
@@ -933,7 +935,7 @@ class _HomeScreenState extends State<HomeScreen> {
               leading: Icon(PairedDevice('', d.name).looksLikePedal ? Icons.music_note : Icons.bluetooth,
                   color: PairedDevice('', d.name).looksLikePedal ? AppColors.accent : AppColors.dim),
               title: Text(d.name),
-              subtitle: Text(d.address, style: const TextStyle(fontFamily: 'monospace', fontSize: 12)),
+              subtitle: Text(d.address, style: const TextStyle(fontFamily: 'monospace', fontFamilyFallback: ['Menlo'], fontSize: 12)),
               trailing: d.paired
                   ? const Text('Paired', style: TextStyle(color: AppColors.dim))
                   : m.pairing == d.address
